@@ -500,6 +500,7 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
 class DeadlineEditButton extends StatelessWidget {
   const DeadlineEditButton({super.key, required this.assignment});
 
+  static const double desktopSize = 32;
   static const double _editMenuWidth = 64;
   static const double _editMenuItemHeight = 40;
 
@@ -516,12 +517,15 @@ class DeadlineEditButton extends StatelessWidget {
     }
 
     if (isDesktop()) {
-      return IconButton(
-        icon: const Icon(TpIcons.edit, size: 15),
-        tooltip: '编辑 Deadline',
-        color: context.tpColors.textMuted,
-        visualDensity: VisualDensity.compact,
-        onPressed: openEditor,
+      return SizedBox.square(
+        dimension: desktopSize,
+        child: IconButton(
+          icon: const Icon(TpIcons.edit, size: 15),
+          tooltip: '编辑 Deadline',
+          color: context.tpColors.textMuted,
+          visualDensity: VisualDensity.compact,
+          onPressed: openEditor,
+        ),
       );
     }
     return PopupMenuButton<String>(

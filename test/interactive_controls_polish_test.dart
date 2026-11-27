@@ -433,10 +433,11 @@ void main() {
 
       final dueSoon = DateTime.now().add(const Duration(hours: 12));
       final dueLater = DateTime.now().add(const Duration(days: 15, hours: 7));
+      const firstTitle = 'CS100 Homework 1: Final Reports';
       final cachedJson = jsonEncode([
         Assignment(
           id: 'hw-1',
-          title: 'CS100 Homework 1',
+          title: firstTitle,
           course: 'CS100',
           platform: 'gradescope',
           due: dueSoon,
@@ -449,6 +450,15 @@ void main() {
           platform: 'blackboard',
           due: dueLater,
           status: 'Open',
+        ).toJson(),
+        ExamAssignment(
+          id: 'exam-1',
+          title: '期末考试',
+          course: 'CS100',
+          due: dueLater.add(const Duration(days: 1)),
+          semesterId: '2026',
+          location: '教室 101',
+          batchName: '期末',
         ).toJson(),
       ]);
 
@@ -502,10 +512,10 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Website-style grouped card: both upcoming items live in ONE TpCard.
+      // Upcoming items share one card.
       expect(find.byType(TpCard), findsOneWidget);
       expect(find.text('即将截止'), findsOneWidget);
-      expect(find.text('2 项'), findsOneWidget);
+      expect(find.text('3 项'), findsOneWidget);
       // Clean metadata casing & no redundant Open/No Submission noise.
       expect(find.text('编译原理 2026秋 · Blackboard'), findsOneWidget);
       expect(find.text('剩余 15 天'), findsOneWidget);
@@ -517,7 +527,7 @@ void main() {
       final cardRect = tester.getRect(find.byType(TpCard));
       final firstRowSwipe = find
           .ancestor(
-            of: find.text('CS100 Homework 1'),
+            of: find.text(firstTitle),
             matching: find.byType(SwipeableCard),
           )
           .first;
@@ -527,13 +537,43 @@ void main() {
       expect(cardRect.right - quickHideRect.right, lessThanOrEqualTo(24));
 
       // Desktop quick actions are visible and functional.
-      expect(find.byTooltip('标记完成'), findsNWidgets(2));
-      expect(find.byTooltip('忽略'), findsNWidgets(2));
+      expect(find.byTooltip('标记完成'), findsNWidgets(3));
+      expect(find.byTooltip('忽略'), findsNWidgets(3));
 
       // Long-press enters multi-select, Escape exits cleanly.
-      await tester.longPress(find.text('CS100 Homework 1'));
+      final firstTitleSize = tester.getSize(find.text(firstTitle));
+      await tester.longPress(find.text(firstTitle));
       await tester.pumpAndSettle();
       expect(find.text('已选择 1 个'), findsOneWidget);
+      expect(tester.getSize(find.text(firstTitle)), firstTitleSize);
+      expect(tester.getRect(find.byType(TpCard)), cardRect);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.text('Deadlines'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('更多操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('选择'));
+      await tester.pumpAndSettle();
+      expect(find.text('Deadlines'), findsNothing);
+      expect(find.text('选择截止事项'), findsOneWidget);
+      expect(find.byIcon(Icons.radio_button_unchecked), findsNWidgets(3));
+      expect(tester.getRect(find.byType(TpCard)), cardRect);
+
+      await tester.tap(find.byTooltip('全选'));
+      await tester.pumpAndSettle();
+      expect(find.text('已选择 3 个'), findsOneWidget);
+      await tester.tap(find.byTooltip('全不选'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择截止事项'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('全选'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('反选'));
+      await tester.pumpAndSettle();
+      expect(find.text('选择截止事项'), findsOneWidget);
+      expect(find.byIcon(Icons.radio_button_unchecked), findsNWidgets(3));
+
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pumpAndSettle();
       expect(find.text('Deadlines'), findsOneWidget);
@@ -543,7 +583,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('已完成 (1)'), findsOneWidget);
     },
-    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    variant: const TargetPlatformVariant({
+      TargetPlatform.linux,
+      TargetPlatform.macOS,
+      TargetPlatform.windows,
+    }),
   );
 
   testWidgets(

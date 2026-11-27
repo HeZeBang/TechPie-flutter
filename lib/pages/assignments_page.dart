@@ -151,8 +151,13 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     _reminderSelectionEpoch = null;
   }
 
-  void _enterSelectionWith(AssignmentService service, String key, int epoch) {
-    if (_selectionMode ||
+  void _enterManageSelection(
+    AssignmentService service,
+    int epoch, {
+    String? key,
+  }) {
+    if (!mounted ||
+        _selectionMode ||
         !identical(_assignmentService, service) ||
         epoch != service.identityEpoch) {
       return;
@@ -160,7 +165,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     setState(() {
       _selectionPurpose = _SelectionPurpose.manage;
       _manageSelectionEpoch = epoch;
-      _selected.add(key);
+      if (key != null) _selected.add(key);
     });
   }
 
@@ -191,11 +196,8 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
   void _toggleSelection(String key) {
     if (_remindersBusy) return;
     setState(() {
-      if (_selected.remove(key)) {
-        if (_selected.isEmpty && !_selectingReminders) _clearSelection();
-      } else {
-        _selected.add(key);
-      }
+      if (_selected.remove(key)) return;
+      _selected.add(key);
     });
   }
 
@@ -204,7 +206,6 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     setState(() {
       if (allKeys.every(_selected.contains)) {
         _selected.clear();
-        if (!_selectingReminders) _clearSelection();
       } else {
         _selected
           ..clear()
@@ -220,7 +221,6 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       _selected
         ..clear()
         ..addAll(next);
-      if (_selected.isEmpty) _clearSelection();
     });
   }
 
@@ -376,6 +376,33 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     List<Assignment> visible,
   ) {
     final canManageReminders = reminders != null && visible.isNotEmpty;
+    final epoch = service.identityEpoch;
+    final VoidCallback? select = visible.isEmpty
+        ? null
+        : () => _enterManageSelection(service, epoch);
+
+    void handleMenuSelection(String value) {
+      switch (value) {
+        case 'toggleAssignments':
+          _toggleAssignmentsVisibility();
+        case 'toggleExams':
+          _toggleExamsVisibility();
+        case 'select':
+          select?.call();
+        case 'addDeadline':
+          unawaited(DeadlineEditorPage.open(context));
+        case 'manageReminders':
+          unawaited(_enterReminderSelection(service, reminders, visible));
+        case 'hidden':
+          unawaited(
+            pushAdaptivePage<void>(
+              context,
+              builder: (_) => const HiddenAssignmentsPage(),
+            ),
+          );
+      }
+    }
+
     return AdaptiveNavigationScaffold.adaptiveBar(
       ios: () => IosNativeNavigationBar(
         title: 'Deadlines',
@@ -403,6 +430,12 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                 title: '',
                 displayInline: true,
                 children: [
+                  if (select != null)
+                    const IosNativeNavigationBarMenuItem(
+                      value: 'select',
+                      title: '选择',
+                      sfSymbol: 'checkmark.circle',
+                    ),
                   const IosNativeNavigationBarMenuItem(
                     value: 'addDeadline',
                     title: '添加 Deadline',
@@ -423,25 +456,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             ],
           ),
         ],
-        onMenuSelected: (_, value) {
-          switch (value) {
-            case 'toggleAssignments':
-              _toggleAssignmentsVisibility();
-            case 'toggleExams':
-              _toggleExamsVisibility();
-            case 'addDeadline':
-              unawaited(DeadlineEditorPage.open(context));
-            case 'manageReminders':
-              unawaited(_enterReminderSelection(service, reminders, visible));
-            case 'hidden':
-              unawaited(
-                pushAdaptivePage<void>(
-                  context,
-                  builder: (_) => const HiddenAssignmentsPage(),
-                ),
-              );
-          }
-        },
+        onMenuSelected: (_, value) => handleMenuSelection(value),
       ),
       material: () => BlurredAppBar(
         title: const Text('Deadlines'),
@@ -462,6 +477,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                   reminders,
                   visible,
                   canManageReminders: canManageReminders,
+                  onSelect: select,
                 ),
               ),
             )
@@ -470,27 +486,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               icon: TpIcons.more,
               sfSymbol: 'ellipsis',
               tooltip: '更多操作',
-              onSelected: (v) {
-                switch (v) {
-                  case 'toggleAssignments':
-                    _toggleAssignmentsVisibility();
-                  case 'toggleExams':
-                    _toggleExamsVisibility();
-                  case 'addDeadline':
-                    unawaited(DeadlineEditorPage.open(context));
-                  case 'manageReminders':
-                    unawaited(
-                      _enterReminderSelection(service, reminders, visible),
-                    );
-                  case 'hidden':
-                    unawaited(
-                      pushAdaptivePage<void>(
-                        context,
-                        builder: (_) => const HiddenAssignmentsPage(),
-                      ),
-                    );
-                }
-              },
+              onSelected: handleMenuSelection,
               items: [
                 AdaptivePopupMenuItem<String>(
                   value: 'toggleAssignments',
@@ -503,6 +499,13 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                   checked: _showExams,
                 ),
                 const AdaptivePopupMenuItem<String>.divider(),
+                if (select != null)
+                  const AdaptivePopupMenuItem<String>(
+                    value: 'select',
+                    label: '选择',
+                    icon: TpIcons.checkCircle,
+                    sfSymbol: 'checkmark.circle',
+                  ),
                 const AdaptivePopupMenuItem<String>(
                   value: 'addDeadline',
                   label: '添加 Deadline',
@@ -536,6 +539,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     DeadlineReminderService? reminders,
     List<Assignment> visible, {
     required bool canManageReminders,
+    required VoidCallback? onSelect,
   }) {
     showDesktopPopover(
       anchorContext: anchorContext,
@@ -578,6 +582,15 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                 ),
                 child: Divider(height: 1, thickness: 0.5, color: colors.divider),
               ),
+              if (onSelect != null)
+                DesktopMenuRow(
+                  leading: const Icon(TpIcons.checkCircle, size: TpTokens.iconM),
+                  title: Text('选择', style: TpTypography.itemTitle(colors)),
+                  onTap: () {
+                    close();
+                    onSelect();
+                  },
+                ),
               DesktopMenuRow(
                 leading: const Icon(TpIcons.add, size: TpTokens.iconM),
                 title: Text('添加 Deadline', style: TpTypography.itemTitle(colors)),
@@ -676,9 +689,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     final selectedCount = visibleKeys.intersection(_selected).length;
     final allSelected =
         visibleKeys.isNotEmpty && selectedCount == visibleKeys.length;
-    final title = _loadingReminders
+    final selectionStatus = _loadingReminders
         ? '正在读取提醒事项…'
-        : _selectingReminders && selectedCount == 0
+        : selectedCount == 0
             ? '选择截止事项'
             : '已选择 $selectedCount 个';
     final hasChanges = visibleKeys.any(
@@ -692,7 +705,8 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
 
     return AdaptiveNavigationScaffold.adaptiveBar(
       ios: () => IosNativeNavigationBar(
-        title: title,
+        title: selectionStatus,
+        largeTitleMode: true,
         selectionMode: true,
         leadingItems: [
           IosNativeNavigationBarItem(
@@ -732,12 +746,13 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                   title: '反选',
                   sfSymbol: 'arrow.triangle.2.circlepath',
                 ),
-                IosNativeNavigationBarMenuItem(
-                  value: 'resetSelected',
-                  title: '重置状态',
-                  sfSymbol: 'arrow.counterclockwise',
-                  destructive: _selected.isNotEmpty,
-                ),
+                if (_selected.isNotEmpty)
+                  const IosNativeNavigationBarMenuItem(
+                    value: 'resetSelected',
+                    title: '重置状态',
+                    sfSymbol: 'arrow.counterclockwise',
+                    destructive: true,
+                  ),
               ],
             ),
         ],
@@ -766,7 +781,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
           onPressed: _remindersBusy ? null : _exitSelection,
           tooltip: '退出多选',
         ),
-        title: Text(title),
+        title: Text(selectionStatus),
         actions: [
           IconButton(
             icon: Icon(allSelected ? Icons.deselect : Icons.select_all),
@@ -1227,7 +1242,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               : () => unawaited(_openAssignmentUrl(context, a)),
       onLongPress: _selectionMode
           ? null
-          : () => _enterSelectionWith(service, key, epoch),
+          : () => _enterManageSelection(service, epoch, key: key),
       editAction: !_selectionMode && a.kind != DeadlineKind.exam
           ? DeadlineEditButton(assignment: a)
           : null,
@@ -1632,6 +1647,14 @@ class _AssignmentRow extends StatefulWidget {
 class _AssignmentRowState extends State<_AssignmentRow> {
   // End padding for the countdown and more button on touch layouts.
   static const double _editRowEndPadding = TpTokens.space2;
+  static const double _selectionIconSize = TpTokens.iconM - 1;
+  static const double _selectionIconGap = 10;
+  static const double _desktopQuickActionSize = 16;
+  static const double _desktopQuickActionsGap = 6;
+  static const _desktopQuickActionConstraints = BoxConstraints.tightFor(
+    width: _desktopQuickActionSize,
+    height: _desktopQuickActionSize,
+  );
 
   bool _hovered = false;
 
@@ -1718,7 +1741,21 @@ class _AssignmentRowState extends State<_AssignmentRow> {
 
     final showQuickActions =
         widget.onQuickToggleComplete != null || widget.onQuickHide != null;
-    final headerEndPadding = widget.editAction != null && !isDesktop()
+    final desktop = isDesktop();
+    final canEdit = assignment.kind != DeadlineKind.exam;
+    final editButtonHeight = desktop
+        ? DeadlineEditButton.desktopSize
+        : kMinInteractiveDimension;
+    final desktopActionsWidth = (canEdit ? DeadlineEditButton.desktopSize : 0) +
+        2 * _desktopQuickActionSize +
+        _desktopQuickActionsGap;
+    final selectionIconWidth =
+        widget.selectionMode ? _selectionIconSize + _selectionIconGap : 0.0;
+    // Keep wrapped titles the same width when desktop actions are hidden.
+    final titleEndGap = desktop && !showQuickActions
+        ? TpTokens.space3 + desktopActionsWidth - selectionIconWidth
+        : TpTokens.space3;
+    final headerEndPadding = !desktop && widget.editAction != null
         ? _editRowEndPadding
         : TpTokens.cardPaddingHorizontal;
 
@@ -1817,16 +1854,19 @@ class _AssignmentRowState extends State<_AssignmentRow> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
+                          SizedBox(
+                            height: canEdit ? editButtonHeight : _selectionIconSize,
+                          ),
                           if (widget.selectionMode) ...[
                             Icon(
                               selected
                                   ? Icons.check_circle
                                   : Icons.radio_button_unchecked,
-                              size: TpTokens.iconM - 1,
+                              size: _selectionIconSize,
                               color:
                                   selected ? colors.brandInk : colors.textMuted,
                             ),
-                            const SizedBox(width: 10),
+                            const SizedBox(width: _selectionIconGap),
                           ],
                           Expanded(
                             child: Row(
@@ -1874,7 +1914,7 @@ class _AssignmentRowState extends State<_AssignmentRow> {
                               ],
                             ),
                           ),
-                          const SizedBox(width: TpTokens.space3),
+                          SizedBox(width: titleEndGap),
                           AnimatedSwitcher(
                             duration: appAnimationDuration(
                               context,
@@ -1897,7 +1937,7 @@ class _AssignmentRowState extends State<_AssignmentRow> {
                           ),
                           if (widget.editAction case final action?) action,
                           if (showQuickActions) ...[
-                            const SizedBox(width: 6),
+                            const SizedBox(width: _desktopQuickActionsGap),
                             AnimatedOpacity(
                               opacity: _hovered ? 1.0 : 0.42,
                               duration: appAnimationDuration(
@@ -1919,15 +1959,12 @@ class _AssignmentRowState extends State<_AssignmentRow> {
                                           ? colors.textMuted
                                           : colors.successGreen,
                                       tooltip: completed ? '取消完成' : '标记完成',
-                                      visualDensity: VisualDensity.compact,
+                                      visualDensity: VisualDensity.standard,
                                       style: IconButton.styleFrom(
                                         tapTargetSize:
                                             MaterialTapTargetSize.shrinkWrap,
                                       ),
-                                      constraints: const BoxConstraints.tightFor(
-                                        width: 24,
-                                        height: 24,
-                                      ),
+                                      constraints: _desktopQuickActionConstraints,
                                       padding: EdgeInsets.zero,
                                       onPressed: widget.onQuickToggleComplete,
                                     ),
@@ -1941,15 +1978,12 @@ class _AssignmentRowState extends State<_AssignmentRow> {
                                       hoverColor: colors.dangerRed
                                           .withValues(alpha: 0.10),
                                       tooltip: '忽略',
-                                      visualDensity: VisualDensity.compact,
+                                      visualDensity: VisualDensity.standard,
                                       style: IconButton.styleFrom(
                                         tapTargetSize:
                                             MaterialTapTargetSize.shrinkWrap,
                                       ),
-                                      constraints: const BoxConstraints.tightFor(
-                                        width: 24,
-                                        height: 24,
-                                      ),
+                                      constraints: _desktopQuickActionConstraints,
                                       padding: EdgeInsets.zero,
                                       onPressed: widget.onQuickHide,
                                     ),

@@ -562,6 +562,82 @@ void main() {
   });
 
   testWidgets(
+    'Deadlines more menu enters selection without moving or resizing the card',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+
+      final ios = defaultTargetPlatform == TargetPlatform.iOS;
+      final more = ios
+          ? find.bySemanticsLabel('更多操作')
+          : find.byTooltip('更多操作');
+      final cancel = ios
+          ? find.bySemanticsLabel('退出多选')
+          : find.byTooltip('退出多选');
+      final upcomingCard = find.byType(TpCard);
+      final cardRect = tester.getRect(upcomingCard);
+
+      Future<void> openSelection() async {
+        await tester.tap(more);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('选择'));
+        await tester.pumpAndSettle();
+      }
+
+      await openSelection();
+
+      expect(find.text('Deadlines'), findsNothing);
+      expect(find.text('选择截止事项'), findsWidgets);
+      expect(tester.getRect(upcomingCard), cardRect);
+      expect(find.byIcon(Icons.radio_button_unchecked), findsNWidgets(2));
+      await tester.tap(find.byIcon(Icons.radio_button_unchecked).first);
+      await tester.pumpAndSettle();
+      expect(find.byIcon(Icons.check_circle), findsOneWidget);
+      expect(find.text('已选择 1 个'), findsWidgets);
+      expect(tester.getRect(upcomingCard), cardRect);
+
+      await tester.tap(find.byIcon(Icons.check_circle));
+      await tester.pumpAndSettle();
+      expect(cancel, findsOneWidget);
+      expect(find.text('选择截止事项'), findsWidgets);
+      expect(find.byIcon(Icons.radio_button_unchecked), findsNWidgets(2));
+      expect(tester.getRect(upcomingCard), cardRect);
+
+      await tester.tap(cancel);
+      await tester.pumpAndSettle();
+      expect(find.text('Deadlines').hitTestable(), findsWidgets);
+      expect(more, findsOneWidget);
+      expect(tester.getRect(upcomingCard), cardRect);
+
+      if (ios) {
+        final scroll = tester.state<NestedScrollViewState>(
+          find.byType(NestedScrollView),
+        );
+        final outer = scroll.outerController;
+        outer.jumpTo(outer.position.maxScrollExtent);
+        await tester.pumpAndSettle();
+        final collapsedCardRect = tester.getRect(upcomingCard);
+        expect(collapsedCardRect.top, lessThan(cardRect.top));
+
+        await openSelection();
+        expect(find.text('选择截止事项').hitTestable(), findsOneWidget);
+        expect(tester.getRect(upcomingCard), collapsedCardRect);
+        await tester.tap(cancel);
+        await tester.pumpAndSettle();
+        expect(tester.getRect(upcomingCard), collapsedCardRect);
+      }
+    },
+    variant: const TargetPlatformVariant({
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    }),
+  );
+
+  testWidgets(
     'rebinding clears normal selection and rejects the old reset callback',
     (tester) async {
       final assignment = assignments.assignments.first;
