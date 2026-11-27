@@ -158,7 +158,10 @@ void main() {
       expect(find.text('首页'), findsWidgets);
       expect(find.text('课表'), findsWidgets);
       expect(find.text('Deadlines'), findsWidgets);
-      expect(find.text('我的'), findsWidgets);
+      expect(
+        find.byKey(const ValueKey('desktop.sidebar-account')),
+        findsOneWidget,
+      );
       final feature = featureEntries.firstWhere((entry) => entry.id == 'student_allowance');
       openCampusFeature(tester.element(find.byType(AppShell)), feature);
       await tester.pumpAndSettle();

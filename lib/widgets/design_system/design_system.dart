@@ -12,3 +12,4 @@ export 'tp_progress_row.dart';
 export 'tp_section_card.dart';
 export 'tp_skeleton.dart';
 export 'tp_state_card.dart';
+export 'tp_tap_surface.dart';

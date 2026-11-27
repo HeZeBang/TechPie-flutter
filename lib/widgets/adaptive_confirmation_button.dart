@@ -7,6 +7,7 @@ import 'package:techpie/utils/platform.dart';
 
 import 'adaptive_alert_dialog.dart';
 import 'cupertino_symbol_icons.dart';
+import 'design_system/tp_press_scale.dart';
 
 class AdaptiveConfirmationButton extends StatelessWidget {
   const AdaptiveConfirmationButton({
@@ -70,25 +71,28 @@ class AdaptiveConfirmationButton extends StatelessWidget {
     final color = destructive
         ? colors.dangerRed
         : CupertinoTheme.of(context).primaryColor;
-    return SizedBox(
-      width: constrainedWidth,
-      height: constrainedHeight,
-      child: CupertinoButton(
-        minimumSize: const Size.square(iosMinimumInteractiveDimension),
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        onPressed: callback,
-        child: hasLabel
-            ? Text(
-                label!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: color, fontSize: 17),
-              )
-            : Icon(
-                cupertinoIconForSfSymbol(sfSymbol, fallback: icon),
-                color: color,
-                size: 20,
-              ),
+    return TpPressScale(
+      pressedScale: 0.96,
+      child: SizedBox(
+        width: constrainedWidth,
+        height: constrainedHeight,
+        child: CupertinoButton(
+          minimumSize: const Size.square(iosMinimumInteractiveDimension),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          onPressed: callback,
+          child: hasLabel
+              ? Text(
+                  label!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: color, fontSize: 17),
+                )
+              : Icon(
+                  cupertinoIconForSfSymbol(sfSymbol, fallback: icon),
+                  color: color,
+                  size: 20,
+                ),
+        ),
       ),
     );
   }

@@ -1,6 +1,10 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/services/theme_service.dart';
 import 'package:techpie/theme/theme.dart';
 import 'package:techpie/utils/motion.dart';
 import 'package:techpie/widgets/design_system/design_system.dart';
@@ -252,4 +256,188 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('项 B'), findsNothing);
   });
+
+  testWidgets(
+    'TpTapSurface row on iOS suppresses ripples, highlights on hold & quick tap, cancels on drag, and has no pending timers',
+    (tester) async {
+      final tp = TpColors.light();
+      var taps = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.light().copyWith(extensions: [tp]),
+          home: Scaffold(
+            body: Center(
+              child: TpCard(
+                child: TpTapSurface(
+                  key: const ValueKey('tap-row'),
+                  style: TpTapFeedbackStyle.row,
+                  onTap: () => taps++,
+                  child: const SizedBox(
+                    height: 48,
+                    width: double.infinity,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('账户绑定'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final rowFinder = find.byKey(const ValueKey('tap-row'));
+      final inkWell = tester.widget<InkWell>(
+        find.descendant(of: rowFinder, matching: find.byType(InkWell)),
+      );
+      expect(inkWell.splashFactory, NoSplash.splashFactory);
+
+      Color? currentOverlayColor() {
+        final boxes = tester.widgetList<DecoratedBox>(
+          find.descendant(of: rowFinder, matching: find.byType(DecoratedBox)),
+        );
+        for (final box in boxes) {
+          if (box.decoration case final BoxDecoration d when d.color != null) {
+            return d.color;
+          }
+        }
+        return null;
+      }
+
+      expect(currentOverlayColor(), isNull);
+
+      // Hold past 42ms -> crisp row highlight renders without scaling the row.
+      final center = tester.getCenter(rowFinder);
+      final hold = await tester.startGesture(center);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 90));
+      final heldColor = currentOverlayColor();
+      expect(heldColor, isNotNull);
+      expect(heldColor!.a, greaterThan(0.2));
+      expect(
+        find.descendant(of: rowFinder, matching: find.byType(TpPressScale)),
+        findsNothing,
+      );
+
+      // Drag past kTouchSlop -> cancels highlight immediately.
+      await hold.moveBy(const Offset(0, kTouchSlop + 8));
+      await tester.pump();
+      expect(currentOverlayColor(), isNull);
+      await hold.up();
+      await tester.pumpAndSettle();
+      expect(taps, 0);
+
+      // Quick <40ms tap -> flashes full highlight on release then settles smoothly.
+      final quick = await tester.startGesture(center);
+      await tester.pump(const Duration(milliseconds: 20));
+      await quick.up();
+      await tester.pump();
+      final flashColor = currentOverlayColor();
+      expect(flashColor, isNotNull);
+      expect(flashColor!.a, closeTo(0.90, 0.05));
+      await tester.pumpAndSettle();
+      expect(currentOverlayColor(), isNull);
+      expect(taps, 1);
+
+      // Bare tester.tap leaves zero pending dart:async Timers even without pumpAndSettle.
+      await tester.tap(rowFinder);
+      await tester.pump();
+      expect(taps, 2);
+
+      // Reduced motion disables animated fadeout delay cleanly.
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.light().copyWith(extensions: [tp]),
+          home: MediaQuery(
+            data: const MediaQueryData(disableAnimations: true),
+            child: Scaffold(
+              body: TpTapSurface(
+                key: const ValueKey('tap-row'),
+                style: TpTapFeedbackStyle.row,
+                onTap: () => taps++,
+                child: const SizedBox(height: 48, width: 200),
+              ),
+            ),
+          ),
+        ),
+      );
+      final rm = await tester.startGesture(
+        tester.getCenter(find.byKey(const ValueKey('tap-row'))),
+      );
+      await tester.pump();
+      expect(currentOverlayColor(), isNotNull);
+      await rm.up();
+      await tester.pump();
+      expect(currentOverlayColor(), isNull);
+      expect(taps, 3);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
+
+  testWidgets(
+    'TpCard shrinks on press and fires onTap on iOS, and ThemeService disables splashes while exposing pressed overlays',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final storage = StorageService(await SharedPreferences.getInstance());
+      final themeService = ThemeService(storage);
+      final theme = themeService.lightTheme;
+
+      expect(theme.splashFactory, NoSplash.splashFactory);
+      expect(
+        theme.filledButtonTheme.style?.overlayColor
+            ?.resolve({WidgetState.pressed}),
+        isNotNull,
+      );
+      expect(
+        theme.textButtonTheme.style?.overlayColor
+            ?.resolve({WidgetState.pressed}),
+        isNotNull,
+      );
+      expect(
+        theme.iconButtonTheme.style?.overlayColor
+            ?.resolve({WidgetState.pressed}),
+        isNotNull,
+      );
+
+      var cardTaps = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: Center(
+              child: TpCard(
+                key: const ValueKey('interactive-card'),
+                onTap: () => cardTaps++,
+                child: const SizedBox(width: 240, height: 80),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final cardFinder = find.byKey(const ValueKey('interactive-card'));
+      expect(
+        find.descendant(of: cardFinder, matching: find.byType(TpPressScale)),
+        findsOneWidget,
+      );
+
+      final gesture = await tester.startGesture(tester.getCenter(cardFinder));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 90));
+      final scale = tester.widget<Transform>(
+        find.descendant(
+          of: find.byType(TpPressScale),
+          matching: find.byType(Transform),
+        ),
+      );
+      expect(scale.transform.storage[0], lessThan(0.99));
+
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(cardTaps, 1);
+    },
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+  );
 }

@@ -91,7 +91,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('我的').first);
+    await tester.tap(find.byKey(const ValueKey('desktop.sidebar-account')));
     await tester.pumpAndSettle();
 
     // Only the developer entry is reachable without an account; open it first

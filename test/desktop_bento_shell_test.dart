@@ -223,7 +223,7 @@ void main() {
 
     await pumpApp(tester);
 
-    await tester.tap(find.text('我的').first);
+    await tester.tap(find.byKey(const ValueKey('desktop.sidebar-account')));
     await tester.pumpAndSettle();
 
     final devOptionsRow =

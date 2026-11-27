@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../theme/tp_colors.dart';
 import '../../theme/tp_tokens.dart';
 import '../../theme/tp_typography.dart';
+import 'tp_tap_surface.dart';
 
 /// Deadline/task row featuring title, urgency countdown, optional subtitle,
 /// and a thin rounded progress indicator bar.
@@ -81,13 +82,9 @@ class TpProgressRow extends StatelessWidget {
         if (onTap == null)
           body
         else
-          InkWell(
+          TpTapSurface(
+            style: TpTapFeedbackStyle.row,
             onTap: onTap,
-            hoverColor: colors.textPrimary.withValues(
-              alpha: colors.isDark ? 0.06 : 0.04,
-            ),
-            splashColor: colors.brandSoft,
-            highlightColor: colors.surfacePressed.withValues(alpha: 0.35),
             child: body,
           ),
         if (showDivider)
