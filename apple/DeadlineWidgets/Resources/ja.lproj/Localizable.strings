@@ -1,3 +1,32 @@
+"widget.title" = "支払いコード";
+"widget.subtitle" = "タップで支払い";
+"widget.description" = "TechPie の学内支払いコードを開く";
+
+"ecard.widget.brand" = "キャンパスカード";
+"ecard.widget.balanceEyebrow" = "残高";
+"ecard.widget.notLinkedEyebrow" = "キャンパスカード";
+"ecard.widget.tapToLink" = "タップして連携";
+"ecard.widget.payButton" = "コード表示";
+"ecard.widget.shortPay" = "支払";
+"ecard.widget.toggleBalance" = "残高の表示を切り替え";
+
+"schedule.widget.title" = "時間割";
+"schedule.widget.description" = "今日の授業と次の予定をひと目で確認";
+"schedule.widget.live" = "授業中";
+"schedule.widget.exam" = "試験";
+"schedule.widget.examLive" = "試験中";
+"schedule.widget.next" = "次の授業";
+"schedule.widget.switchToday" = "今日";
+"schedule.widget.switchTomorrow" = "明日";
+"schedule.widget.notSynced" = "TechPie を開いて同期";
+"schedule.widget.unavailable" = "時間割を読み込めません";
+"schedule.widget.emptyToday" = "本日の授業は終了しました";
+"schedule.widget.emptyTomorrow" = "明日の授業はありません";
+"schedule.widget.emptyAuto" = "直近 7 日間の予定はありません";
+"schedule.widget.moreCourses" = "ほか %ld 件";
+"schedule.widget.sampleTitle1" = "線形代数";
+"schedule.widget.sampleTitle2" = "アルゴリズムとデータ構造";
+
 "deadline.widget.title" = "Deadlines";
 "deadline.widget.description" = "今後の課題と試験";
 "deadline.widget.empty" = "予定されている締切はありません";
@@ -13,3 +42,16 @@
 "deadline.widget.section.tomorrow" = "明日";
 "deadline.widget.section.nextWeek" = "7 日以内";
 "deadline.widget.section.later" = "それ以降";
+"deadline.widget.sampleTitle1" = "課題 4";
+"deadline.widget.sampleTitle2" = "中間試験";
+
+"overview.widget.title" = "今日";
+"overview.widget.description" = "次の授業と締切をまとめて表示";
+
+"widget.weekday.1" = "月";
+"widget.weekday.2" = "火";
+"widget.weekday.3" = "水";
+"widget.weekday.4" = "木";
+"widget.weekday.5" = "金";
+"widget.weekday.6" = "土";
+"widget.weekday.7" = "日";

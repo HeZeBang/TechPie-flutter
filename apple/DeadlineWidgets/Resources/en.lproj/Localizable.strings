@@ -1,3 +1,32 @@
+"widget.title" = "Pay Code";
+"widget.subtitle" = "Pay in a tap";
+"widget.description" = "Open your campus Pay Code in TechPie";
+
+"ecard.widget.brand" = "Campus Card";
+"ecard.widget.balanceEyebrow" = "Balance";
+"ecard.widget.notLinkedEyebrow" = "Campus Card";
+"ecard.widget.tapToLink" = "Tap to link";
+"ecard.widget.payButton" = "Pay Code";
+"ecard.widget.shortPay" = "Pay";
+"ecard.widget.toggleBalance" = "Show or hide balance";
+
+"schedule.widget.title" = "Schedule";
+"schedule.widget.description" = "Today's classes, current progress, and upcoming sessions";
+"schedule.widget.live" = "In Class";
+"schedule.widget.exam" = "Exam";
+"schedule.widget.examLive" = "Exam Live";
+"schedule.widget.next" = "Next";
+"schedule.widget.switchToday" = "Today";
+"schedule.widget.switchTomorrow" = "Tomorrow";
+"schedule.widget.notSynced" = "Open TechPie to sync";
+"schedule.widget.unavailable" = "Schedule unavailable";
+"schedule.widget.emptyToday" = "No more classes today";
+"schedule.widget.emptyTomorrow" = "No classes tomorrow";
+"schedule.widget.emptyAuto" = "No upcoming classes in 7 days";
+"schedule.widget.moreCourses" = "+%ld more";
+"schedule.widget.sampleTitle1" = "Linear Algebra";
+"schedule.widget.sampleTitle2" = "Algorithms & Data Structures";
+
 "deadline.widget.title" = "Deadlines";
 "deadline.widget.description" = "Upcoming assignments and exams";
 "deadline.widget.empty" = "No upcoming deadlines";
@@ -13,3 +42,16 @@
 "deadline.widget.section.tomorrow" = "Tomorrow";
 "deadline.widget.section.nextWeek" = "Next 7 days";
 "deadline.widget.section.later" = "Later";
+"deadline.widget.sampleTitle1" = "Problem Set 4";
+"deadline.widget.sampleTitle2" = "Midterm Exam";
+
+"overview.widget.title" = "Today";
+"overview.widget.description" = "Next class and upcoming deadlines at a glance";
+
+"widget.weekday.1" = "Mon";
+"widget.weekday.2" = "Tue";
+"widget.weekday.3" = "Wed";
+"widget.weekday.4" = "Thu";
+"widget.weekday.5" = "Fri";
+"widget.weekday.6" = "Sat";
+"widget.weekday.7" = "Sun";

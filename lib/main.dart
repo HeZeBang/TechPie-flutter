@@ -28,6 +28,7 @@ import 'services/ecard_widget_service.dart';
 import 'services/egate_app_service.dart';
 import 'services/grade_service.dart';
 import 'services/holiday_travel_service.dart';
+import 'services/home_widgets_service.dart';
 import 'services/http_client.dart';
 import 'services/ids/ids_client.dart';
 import 'services/island_service.dart';
@@ -191,6 +192,12 @@ Future<void> _realMain(SharedPreferences prefs) async {
         defaultTargetPlatform != TargetPlatform.linux ||
         storageService.deadlineWidgetsEnabled,
   );
+  final homeWidgetsService = HomeWidgetsService(
+    storageService,
+    scheduleService,
+    assignmentService,
+    campusCardService,
+  );
   final deadlineReminderService =
       isApple ? DeadlineReminderService(assignmentService) : null;
   final syncService = SyncService(
@@ -220,6 +227,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
     await storageService.clearCampusCaches();
     await CampusFileShare.clearScopedFiles();
     oaGymService.clearSession();
+    unawaited(homeWidgetsService.clearSchedule());
     await thirdPartyAuthService.campusWebSession.prepare();
   };
 
@@ -285,6 +293,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       ecardWidgetService: ecardWidgetService,
       wearEngineService: wearEngineService,
       deadlineWidgetService: deadlineWidgetService,
+      homeWidgetsService: homeWidgetsService,
       deadlineReminderService: deadlineReminderService,
       spendingAlertService: spendingAlertService,
       islandService: islandService,
@@ -296,6 +305,9 @@ Future<void> _realMain(SharedPreferences prefs) async {
   if (isApple || (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux)) {
     deadlineWidgetService.initialize();
   }
+  if (homeWidgetsService.enabled) {
+    homeWidgetsService.initialize();
+  }
 
   islandService.start();
   oaGymService.startProfileSync();
@@ -303,7 +315,12 @@ Future<void> _realMain(SharedPreferences prefs) async {
 
   // The home-screen widget / shortcut only needs its handler once something
   // could press it — a widget tap on iOS/Android, a long-press shortcut on OHOS.
-  if (isIos() || isAndroid() || isOhos()) ecardWidgetService.initialize();
+  if (isIos() ||
+      (!kIsWeb && defaultTargetPlatform == TargetPlatform.macOS) ||
+      isAndroid() ||
+      isOhos()) {
+    ecardWidgetService.initialize();
+  }
 
   // Build the campus-card runtime now that the first frame is up, so tapping the
   // pass does not pay for it. Nothing session-related happens here: a request
@@ -459,6 +476,7 @@ class TechPieApp extends StatefulWidget {
   final EcardWidgetService? ecardWidgetService;
   final WearEngineService? wearEngineService;
   final DeadlineWidgetService? deadlineWidgetService;
+  final HomeWidgetsService? homeWidgetsService;
   final DeadlineReminderService? deadlineReminderService;
   final SpendingAlertService? spendingAlertService;
   final IslandService? islandService;
@@ -484,6 +502,7 @@ class TechPieApp extends StatefulWidget {
     this.ecardWidgetService,
     this.wearEngineService,
     this.deadlineWidgetService,
+    this.homeWidgetsService,
     this.deadlineReminderService,
     this.spendingAlertService,
     this.islandService,
@@ -595,6 +614,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     _certificates = _createAcademicCertificateService();
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
     widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
+    widget.homeWidgetsService?.setOpenScheduleHandler(_openSchedule);
     _studyPlanService = _createStudyPlanService();
     widget.deadlineReminderService?.initialize();
   }
@@ -661,6 +681,10 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       oldWidget.deadlineWidgetService?.clearOpenHandler();
       widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
     }
+    if (oldWidget.homeWidgetsService != widget.homeWidgetsService) {
+      oldWidget.homeWidgetsService?.clearOpenScheduleHandler();
+      widget.homeWidgetsService?.setOpenScheduleHandler(_openSchedule);
+    }
     if (oldWidget.deadlineReminderService != widget.deadlineReminderService) {
       oldWidget.deadlineReminderService?.dispose();
       widget.deadlineReminderService?.initialize();
@@ -675,6 +699,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.ecardWidgetService?.clearOpenPayHandler();
     widget.deadlineWidgetService?.dispose();
+    widget.homeWidgetsService?.dispose();
     widget.deadlineReminderService?.dispose();
     widget.spendingAlertService?.dispose();
     _studyPlanService.dispose();
@@ -743,6 +768,11 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     await showUpdateAvailableDialog(dialogContext, release);
   }
 
+  Future<void> _openSchedule() async {
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
+    appShellPendingSchedule.value = true;
+  }
+
   Future<void> _openDeadlines() async {
     // Only dialogs and sheets are dismissed: a login or player covering the
     // shell stays, and back from it lands on the Deadlines tab.
@@ -802,6 +832,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         ecardWidgetService: widget.ecardWidgetService,
         wearEngineService: widget.wearEngineService,
         deadlineWidgetService: widget.deadlineWidgetService,
+        homeWidgetsService: widget.homeWidgetsService,
         deadlineReminderService: widget.deadlineReminderService,
         spendingAlertService: widget.spendingAlertService,
         holidayTravelService: _holidayTravel,
