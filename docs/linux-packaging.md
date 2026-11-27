@@ -90,8 +90,7 @@ scripts/check-linux-packaging.sh
 This builds a small fixture, launches its actual AppImage without FUSE, verifies
 argument forwarding, rejects candidate AUR releases, and builds a real Arch
 package to check its installed paths. `linux-packaging-check.yml` runs the same
-checks when packaging files change. Flutter functionality is covered by the
-existing analysis/tests; packaging checks do not rebuild it.
+checks when packaging files change.
 
 References: [AppDir specification](https://docs.appimage.org/reference/appdir.html),
 [AUR submission guidelines](https://wiki.archlinux.org/title/AUR_submission_guidelines),

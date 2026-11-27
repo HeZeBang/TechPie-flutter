@@ -1,9 +1,6 @@
 import '../money_fen.dart';
 
-/// Read-only result of opening the password-change service.
-///
-/// It proves only that the server recognizes the current card context. It does
-/// not imply that the write endpoint is enabled.
+/// Result of initializing the spending-password modification session.
 final class SpendingPasswordInitialization {
   const SpendingPasswordInitialization({
     required this.accountKey,
