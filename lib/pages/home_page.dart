@@ -29,12 +29,14 @@ import '../utils/user_display_name.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_slider.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/app_shell/desktop/desktop_shell.dart';
 import '../widgets/design_system/design_system.dart';
 import '../widgets/home/home_bento_editor.dart';
+import '../widgets/home/home_campus_service_widgets.dart';
 import '../widgets/home/home_mobile_reorder_list.dart';
 import '../widgets/home/home_widget_chrome.dart';
 import '../widgets/home/home_widget_gallery_sheet.dart';
@@ -725,6 +727,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           HomeWidgetId.todayCourses => _buildTodayClasses(colors, auth.isLoggedIn),
           HomeWidgetId.deadlines => _buildPendingAssignments(colors),
           HomeWidgetId.quickActions => _buildQuickActions(),
+          _ => buildCampusServiceHomeWidget(
+              context,
+              id,
+              todayCourses: _todayCourses,
+            ),
         };
 
     final debugPanel = isDebug ? _buildDebugPanel(colors) : null;
@@ -1469,11 +1476,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                       const SizedBox(width: TpTokens.space2),
                       Expanded(
-                        child: Slider(
+                        child: AdaptiveSlider(
                           value: minutes,
                           min: 0,
                           max: 1439,
                           divisions: 1439,
+                          semanticLabel: 'Time of day',
                           onChanged: _debugSetTime,
                         ),
                       ),

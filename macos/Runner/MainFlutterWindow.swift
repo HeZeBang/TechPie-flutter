@@ -42,6 +42,9 @@ class MainFlutterWindow: NSWindow {
     self.windowChromeChannel = chromeChannel
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    MacosNativeControlsPlugin.register(
+      with: flutterViewController.registrar(forPlugin: "MacosNativeControlsPlugin")
+    )
     if let appDelegate = NSApp.delegate as? AppDelegate {
       let messenger = flutterViewController.engine.binaryMessenger
       appDelegate.deadlineWidgetBridge.configure(messenger: messenger)

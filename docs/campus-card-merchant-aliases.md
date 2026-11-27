@@ -74,7 +74,7 @@ issue #118 pairs as verified: merchant `243000125` with POS `0238` is
 - `243000381` + `0315`: `白玉兰一楼 · 港式烧腊窗口`.
 
 All nine exact pairs are included in the bundled snapshot.
-No merchant-wide alias is assumed for unverified terminals. The asset stores
+The asset stores
 only public merchant identifiers, names, verification dates and a nonpersonal
 confirmation reference. Tests use synthetic transactions and also validate
 the shipped configuration.
@@ -113,10 +113,8 @@ and no POS code (such as payment-code settings). Their details are hidden too.
 The campus-card settings switch `显示所有记录` reveals these records and their
 details for debugging. This preference defaults to off and persists only on the
 device. Hidden records do not count toward the payment page's minimum visible
-history count. Server pagination and balance parsing remain unchanged.
+history count.
 
 The displayed balance is parsed from `/home` → `cardinfo.cardbal` in yuan.
 Payment-code responses may refresh the same snapshot from `data.cardbal`, using
-the existing account and response-order guards. This change does not alter the
-calculation or claim it represents cash rather than a credit-related balance.
-The official account/credit meaning still requires verification.
+the existing account and response-order guards.

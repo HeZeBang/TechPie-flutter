@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/features/campus_card/app/app_runtime.dart';
@@ -361,15 +362,52 @@ void main() {
       final app = await mount(tester, fromCard: true);
       tunnel.current = EcardBindHijackStatus.unsupported;
       tester.view.physicalSize = const Size(2080, 1380);
+      int? popUpViewId;
+      final messenger = tester.binding.defaultBinaryMessenger;
+      if (defaultTargetPlatform == TargetPlatform.macOS) {
+        messenger.setMockMethodCallHandler(SystemChannels.platform_views, (call) async {
+          if (call.method == 'create') {
+            final args = call.arguments as Map<Object?, Object?>;
+            final id = args['id'] as int;
+            if (args['viewType'] == 'TechPieMacPopUpButton') {
+              popUpViewId = id;
+              messenger.setMockMethodCallHandler(
+                MethodChannel('TechPieMacPopUpButton_$id'),
+                (subCall) async {
+                  if (subCall.method == 'getIntrinsicSize') return {'width': 120.0};
+                  return null;
+                },
+              );
+            }
+          }
+          return null;
+        });
+        addTearDown(
+          () => messenger.setMockMethodCallHandler(SystemChannels.platform_views, null),
+        );
+      }
       await tester.pumpWidget(app);
       await tester.pumpAndSettle();
 
       expect(find.text('Open Cloud sync'), findsOneWidget);
       expect(find.byKey(const Key('ecard-bind-hijack-button')), findsNothing);
-      await tester.tap(find.text(EcardOpenIdChannel.wechat.label));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(EcardOpenIdChannel.alipay.label).last);
-      await tester.pumpAndSettle();
+      if (defaultTargetPlatform == TargetPlatform.macOS) {
+        expect(find.byType(AppKitView), findsOneWidget);
+        expect(popUpViewId, isNotNull);
+        await messenger.handlePlatformMessage(
+          'TechPieMacPopUpButton_$popUpViewId',
+          const StandardMethodCodec().encodeMethodCall(
+            const MethodCall('itemSelected', {'index': 1}),
+          ),
+          (_) {},
+        );
+        await tester.pumpAndSettle();
+      } else {
+        await tester.tap(find.text(EcardOpenIdChannel.wechat.label));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text(EcardOpenIdChannel.alipay.label).last);
+        await tester.pumpAndSettle();
+      }
       await enterOpenId(tester, '  $openId  ');
       await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pumpAndSettle();

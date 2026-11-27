@@ -8,6 +8,7 @@ import '../../theme/theme.dart';
 import '../adaptive_alert_dialog.dart';
 import '../adaptive_button.dart';
 import '../adaptive_date_picker.dart';
+import '../adaptive_progress_indicator.dart';
 import '../app_shell/app_shell_metrics.dart';
 import '../design_system/design_system.dart';
 import 'gym_shared.dart';
@@ -435,11 +436,7 @@ class _GymBookingTabState extends State<GymBookingTab>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
+                      const AdaptiveActivityIndicator(size: 18, strokeWidth: 2),
                       const SizedBox(width: TpTokens.space3),
                       Text(
                         '正在查询 ${_availability.length}/${_sports.length * _selectedSlots.length} 个时段',

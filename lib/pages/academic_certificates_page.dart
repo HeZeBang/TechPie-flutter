@@ -15,10 +15,13 @@ import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_progress_indicator.dart';
+import '../widgets/adaptive_select.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 import 'generic_webview_page.dart';
 
@@ -44,7 +47,22 @@ class AcademicCertificatesPage extends StatelessWidget {
     if (s == null) {
       return Scaffold(
         backgroundColor: context.tpColors.canvas,
-        appBar: const BlurredAppBar(title: Text('成绩单与证明')),
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: '成绩单与证明',
+            leadingItems: const [
+              IosNativeNavigationBarItem(
+                id: 'back',
+                title: '返回',
+                sfSymbol: 'chevron.left',
+                accessibilityLabel: '返回',
+                placementGroup: 'leading-main',
+              ),
+            ],
+            onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
+          ),
+          material: () => const BlurredAppBar(title: Text('成绩单与证明')),
+        ),
         body: const CampusPrerequisiteView(
           icon: TpIcons.document,
           title: '成绩单与证明',
@@ -216,26 +234,66 @@ class _CertificatesState extends State<_Certificates> {
       backgroundColor: colors.canvas,
       extendBodyBehindAppBar:
           AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
-      appBar: BlurredAppBar(
-        title: const Text('成绩单与证明'),
-        actions: [
-          IconButton(
-            tooltip: '在 EAMS 网页中办理',
-            icon: const Icon(TpIcons.externalLink),
-            onPressed: s.ready ? web : null,
-          ),
-          PageRefreshButton(
-            onRefresh: refresh,
-            enabled: s.ready,
-            refreshing: busy,
-          ),
-          if (!isDesktop())
-            IconButton(
-              tooltip: '刷新记录',
-              icon: const Icon(TpIcons.refresh),
-              onPressed: busy || !s.ready ? null : refresh,
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '成绩单与证明',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
             ),
-        ],
+          ],
+          trailingItems: [
+            IosNativeNavigationBarItem(
+              id: 'web',
+              sfSymbol: 'safari',
+              accessibilityLabel: '在 EAMS 网页中办理',
+              enabled: s.ready,
+              placementGroup: 'trailing-main',
+            ),
+            IosNativeNavigationBarItem(
+              id: 'refresh',
+              sfSymbol: 'arrow.clockwise',
+              accessibilityLabel: '刷新记录',
+              enabled: !busy && s.ready,
+              placementGroup: 'trailing-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            switch (id) {
+              case 'back':
+                unawaited(maybePopAdaptivePage<void>(context));
+              case 'web':
+                web();
+              case 'refresh':
+                unawaited(refresh());
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: const Text('成绩单与证明'),
+          actions: [
+            IconButton(
+              tooltip: '在 EAMS 网页中办理',
+              icon: const Icon(TpIcons.externalLink),
+              onPressed: s.ready ? web : null,
+            ),
+            PageRefreshButton(
+              onRefresh: refresh,
+              enabled: s.ready,
+              refreshing: busy,
+            ),
+            if (!isDesktop())
+              IconButton(
+                tooltip: '刷新记录',
+                icon: const Icon(TpIcons.refresh),
+                onPressed: busy || !s.ready ? null : refresh,
+              ),
+          ],
+        ),
       ),
       body: !s.ready
           ? const CampusPrerequisiteView(
@@ -355,12 +413,9 @@ class _CertificatesState extends State<_Certificates> {
                                           children: [
                                             TextButton.icon(
                                               icon: downloading
-                                                  ? const SizedBox.square(
-                                                      dimension: 16,
-                                                      child:
-                                                          CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                      ),
+                                                  ? const AdaptiveActivityIndicator(
+                                                      size: 16,
+                                                      strokeWidth: 2,
                                                     )
                                                   : const Icon(
                                                       TpIcons.document,
@@ -473,30 +528,29 @@ class _FormDialogState extends State<_FormDialog> {
                                   }
                                 },
                         )
-                      : DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          initialValue: field.options.containsKey(field.value)
-                              ? field.value
+                      : AdaptiveSelect(
+                          label: field.label,
+                          width: double.infinity,
+                          enabled: !field.readOnly,
+                          value: field.options.containsKey(
+                                  values[field.name] ?? field.value,
+                                )
+                              ? (values[field.name] ?? field.value)
                               : null,
-                          decoration: InputDecoration(labelText: field.label),
-                          items: [
+                          placeholder: '请选择${field.label}',
+                          options: [
                             for (final opt in field.options.entries)
-                              DropdownMenuItem(
+                              AdaptiveSelectOption(
                                 value: opt.key,
-                                child: Text(
-                                  opt.value,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                label: opt.value,
                               ),
                           ],
-                          onChanged: field.readOnly
-                              ? null
-                              : (v) {
-                                  values[field.name] = v ?? '';
-                                  if (error != null) {
-                                    setState(() => error = null);
-                                  }
-                                },
+                          onChanged: (v) {
+                            setState(() {
+                              values[field.name] = v;
+                              error = null;
+                            });
+                          },
                         ),
                 ),
               if (error != null)

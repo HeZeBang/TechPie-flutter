@@ -8,6 +8,7 @@ import '../services/service_provider.dart';
 import '../services/storage_service.dart';
 import '../theme/theme.dart';
 import '../utils/haptics.dart';
+import '../widgets/adaptive_checkbox.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -405,23 +406,64 @@ class _HomeShortcutEditorPageState extends State<HomeShortcutEditorPage> {
       canPop: !_saving,
       child: Scaffold(
         backgroundColor: colors.canvas,
-        appBar: BlurredAppBar(
-          leading: IconButton(
-            tooltip: '取消',
-            icon: const Icon(TpIcons.close),
-            onPressed: _saving ? null : () => Navigator.of(context).pop(),
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: '编辑首页快捷',
+            leadingItems: [
+              IosNativeNavigationBarItem(
+                id: 'cancel',
+                title: '取消',
+                sfSymbol: 'xmark',
+                accessibilityLabel: '取消',
+                enabled: !_saving,
+                placementGroup: 'leading-main',
+              ),
+            ],
+            trailingItems: [
+              IosNativeNavigationBarItem(
+                id: 'reset',
+                title: '恢复默认',
+                enabled: !_saving,
+                placementGroup: 'trailing-main',
+              ),
+              IosNativeNavigationBarItem(
+                id: 'save',
+                title: '保存',
+                role: IosNativeNavigationBarItemRole.done,
+                enabled: !_saving,
+                placementGroup: 'trailing-main',
+              ),
+            ],
+            onItemPressed: (id) {
+              if (_saving) return;
+              switch (id) {
+                case 'cancel':
+                  Navigator.of(context).pop();
+                case 'reset':
+                  _resetDefaults();
+                case 'save':
+                  unawaited(_save());
+              }
+            },
           ),
-          title: const Text('编辑首页快捷'),
-          actions: [
-            TextButton(
-              onPressed: _saving ? null : _resetDefaults,
-              child: const Text('恢复默认'),
+          material: () => BlurredAppBar(
+            leading: IconButton(
+              tooltip: '取消',
+              icon: const Icon(TpIcons.close),
+              onPressed: _saving ? null : () => Navigator.of(context).pop(),
             ),
-            TextButton(
-              onPressed: _saving ? null : _save,
-              child: const Text('保存'),
-            ),
-          ],
+            title: const Text('编辑首页快捷'),
+            actions: [
+              TextButton(
+                onPressed: _saving ? null : _resetDefaults,
+                child: const Text('恢复默认'),
+              ),
+              TextButton(
+                onPressed: _saving ? null : _save,
+                child: const Text('保存'),
+              ),
+            ],
+          ),
         ),
         body: TpPageBody(
           child: ListView(
@@ -489,35 +531,38 @@ class _HomeShortcutEditorPageState extends State<HomeShortcutEditorPage> {
                 title: '选择服务',
                 child: Column(
                   children: [
-                    for (final f in _available.values)
-                      CheckboxListTile(
-                        secondary: Icon(
-                          f.icon.icon ?? TpIcons.activities,
-                          color: colors.brandInk,
-                        ),
-                        title: Text(f.description),
-                        subtitle: Text(
-                          f.subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        value: _selected.contains(f.id),
-                        onChanged: _saving ||
-                                (!_selected.contains(f.id) &&
-                                    _selected.length == maxPinnedQuickFeatures)
-                            ? null
-                            : (checked) {
-                                unawaited(
-                                  AppHaptics.play(AppHaptics.selection),
-                                );
-                                setState(() {
-                                  if (checked == true) {
-                                    _selected.add(f.id);
-                                  } else {
-                                    _selected.remove(f.id);
-                                  }
-                                });
-                              },
+                    for (var i = 0; i < _available.length; i++)
+                      Builder(
+                        builder: (context) {
+                          final f = _available.values.elementAt(i);
+                          final disabled = _saving ||
+                              (!_selected.contains(f.id) &&
+                                  _selected.length == maxPinnedQuickFeatures);
+                          return AdaptiveCheckboxRow(
+                            title: f.description,
+                            subtitle: f.subtitle,
+                            trailing: Icon(
+                              f.icon.icon ?? TpIcons.activities,
+                              color: colors.brandInk,
+                            ),
+                            showDivider: i < _available.length - 1,
+                            value: _selected.contains(f.id),
+                            onChanged: disabled
+                                ? null
+                                : (checked) {
+                                    unawaited(
+                                      AppHaptics.play(AppHaptics.selection),
+                                    );
+                                    setState(() {
+                                      if (checked == true) {
+                                        _selected.add(f.id);
+                                      } else {
+                                        _selected.remove(f.id);
+                                      }
+                                    });
+                                  },
+                          );
+                        },
                       ),
                   ],
                 ),

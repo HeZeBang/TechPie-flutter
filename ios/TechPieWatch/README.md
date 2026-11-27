@@ -65,10 +65,6 @@ it contains no identity or credential values.
 Run `swift test --package-path ios/WatchSupport` for signature interoperability,
 binary QR, expiry, credential matching, snapshot version and online requests. Flutter tests
 in `test/watch_sync_service_test.dart` cover enrollment and account/disable races.
-Actual background delivery and payment acceptance require paired physical devices.
 Simulator arguments `--watch-preview --preview-pay` / `--preview-info` exist only
 in Debug simulator builds; they use synthetic data and never persist or transfer
 it. Launch without them to test the real unconfigured flow.
-
-Transparent QR presentation requires validation on the campus scanners, including
-small watch displays. A successful build/preview does not prove a completed payment.

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
@@ -9,9 +11,13 @@ import '../services/campus/campus_session.dart';
 import '../services/elearning_service.dart';
 import '../theme/theme.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_progress_indicator.dart';
+import '../widgets/adaptive_segmented_control.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'elearning_hub_page.dart';
 import 'generic_webview_page.dart';
 
@@ -37,41 +43,144 @@ class ElearningCourseDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tpColors;
     return BlackboardSessionView(
       owner: owner,
-      builder: (context, s) => DefaultTabController(
-        length: 3,
-        child: Scaffold(
-          backgroundColor: colors.canvas,
-          appBar: BlurredAppBar(
-            title: Text(course.name),
-            actions: [
-              IconButton(
-                icon: const Icon(TpIcons.externalLink),
-                tooltip: '打开 Blackboard 网页',
-                onPressed: () => _web(
-                  context,
-                  course.name,
-                  s.web(
-                    '/webapps/blackboard/execute/launcher',
-                    {'type': 'Course', 'id': course.id, 'url': ''},
-                  ),
-                ),
-              ),
-            ],
-            bottom: const TabBar(
-              tabs: [Tab(text: '课件'), Tab(text: '成绩'), Tab(text: '公告与小组')],
+      builder: (context, s) => _CourseDetailScaffold(
+        course: course,
+        service: s,
+      ),
+    );
+  }
+}
+
+class _CourseDetailScaffold extends StatefulWidget {
+  const _CourseDetailScaffold({
+    required this.course,
+    required this.service,
+  });
+
+  final BlackboardCourse course;
+  final ElearningService service;
+
+  @override
+  State<_CourseDetailScaffold> createState() => _CourseDetailScaffoldState();
+}
+
+class _CourseDetailScaffoldState extends State<_CourseDetailScaffold>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(length: 3, vsync: this)
+    ..addListener(_onTabChanged);
+  int _tabIndex = 0;
+
+  void _onTabChanged() {
+    if (!mounted || _tabIndex == _tabs.index) return;
+    setState(() => _tabIndex = _tabs.index);
+  }
+
+  @override
+  void dispose() {
+    _tabs
+      ..removeListener(_onTabChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _openWeb() {
+    unawaited(
+      _web(
+        context,
+        widget.course.name,
+        widget.service.web(
+          '/webapps/blackboard/execute/launcher',
+          {'type': 'Course', 'id': widget.course.id, 'url': ''},
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    final course = widget.course;
+    final s = widget.service;
+    return Scaffold(
+      backgroundColor: colors.canvas,
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: course.name,
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
             ),
-          ),
-          body: TabBarView(
-            children: [
-              _Contents(service: s, course: course.id),
-              _Grades(service: s, course: course.id),
-              _News(service: s, course: course.id),
-            ],
+          ],
+          trailingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'web',
+              sfSymbol: 'safari',
+              accessibilityLabel: '打开 Blackboard 网页',
+              placementGroup: 'trailing-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') {
+              unawaited(maybePopAdaptivePage<void>(context));
+            } else if (id == 'web') {
+              _openWeb();
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: Text(course.name),
+          actions: [
+            IconButton(
+              icon: const Icon(TpIcons.externalLink),
+              tooltip: '打开 Blackboard 网页',
+              onPressed: _openWeb,
+            ),
+          ],
+          bottom: TabBar(
+            controller: _tabs,
+            tabs: const [Tab(text: '课件'), Tab(text: '成绩'), Tab(text: '公告与小组')],
           ),
         ),
+      ),
+      body: Column(
+        children: [
+          AdaptiveNavigationScaffold.adaptiveChrome(
+            ios: () => Padding(
+              padding: const EdgeInsets.fromLTRB(
+                TpTokens.pageHorizontalPadding,
+                TpTokens.space2,
+                TpTokens.pageHorizontalPadding,
+                0,
+              ),
+              child: TpPageBody(
+                maxWidth: 880,
+                child: AdaptiveSegmentedControl(
+                  value: _tabIndex,
+                  segments: const ['课件', '成绩', '公告与小组'],
+                  shrinkWrap: true,
+                  onChanged: _tabs.animateTo,
+                ),
+              ),
+            ),
+            material: () => const SizedBox.shrink(),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                _Contents(service: s, course: course.id),
+                _Grades(service: s, course: course.id),
+                _News(service: s, course: course.id),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -98,13 +207,10 @@ class _GradesState extends State<_Grades> {
           padding: const EdgeInsets.all(TpTokens.space2),
           child: TpPageBody(
             maxWidth: 880,
-            child: SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(value: false, label: Text('成绩明细')),
-                ButtonSegment(value: true, label: Text('提交确认')),
-              ],
-              selected: {receipts},
-              onSelectionChanged: (v) => setState(() => receipts = v.first),
+            child: AdaptiveSegmentedControl(
+              value: receipts ? 1 : 0,
+              segments: const ['成绩明细', '提交确认'],
+              onChanged: (idx) => setState(() => receipts = idx == 1),
             ),
           ),
         ),
@@ -221,13 +327,10 @@ class _NewsState extends State<_News> {
             padding: const EdgeInsets.all(TpTokens.space2),
             child: TpPageBody(
               maxWidth: 880,
-              child: SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: false, label: Text('课程公告')),
-                  ButtonSegment(value: true, label: Text('课程小组')),
-                ],
-                selected: {groups},
-                onSelectionChanged: (v) => setState(() => groups = v.first),
+              child: AdaptiveSegmentedControl(
+                value: groups ? 1 : 0,
+                segments: const ['课程公告', '课程小组'],
+                onChanged: (idx) => setState(() => groups = idx == 1),
               ),
             ),
           ),
@@ -377,7 +480,22 @@ class _ContentNodePage extends StatelessWidget {
     final colors = context.tpColors;
     return Scaffold(
       backgroundColor: colors.canvas,
-      appBar: BlurredAppBar(title: Text(node.title)),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: node.title,
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
+            ),
+          ],
+          onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
+        ),
+        material: () => BlurredAppBar(title: Text(node.title)),
+      ),
       body: node.folder
           ? _Contents(
               service: service,
@@ -547,10 +665,7 @@ class _AttachmentTileState extends State<_AttachmentTile> {
         subtitle: const Text('下载并打开'),
         onTap: busy ? null : () => open(),
         leading: busy
-            ? const SizedBox.square(
-                dimension: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
+            ? const AdaptiveActivityIndicator(size: 20, strokeWidth: 2)
             : const Icon(TpIcons.download),
         trailing: _canShare
             ? IconButton(

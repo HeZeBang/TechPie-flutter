@@ -51,6 +51,7 @@ import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/theme/tp_icons.dart';
+import 'package:techpie/widgets/adaptive_select.dart';
 import 'package:techpie/widgets/campus_prerequisite_view.dart';
 import 'package:techpie/widgets/design_system/design_system.dart';
 import 'package:techpie/widgets/gym/gym_booking_tab.dart';
@@ -672,10 +673,10 @@ void main() {
     await tester.tap(find.text('新申请'));
     await tester.pumpAndSettle();
 
-    final dropdown = tester.widget<DropdownButtonFormField<String>>(
-      find.byType(DropdownButtonFormField<String>),
+    final dropdown = tester.widget<AdaptiveSelect>(
+      find.byType(AdaptiveSelect),
     );
-    expect(dropdown.onChanged, isNull);
+    expect(dropdown.enabled, isFalse);
 
     await tester.enterText(find.byType(TextFormField), '留学需要');
     await tester.tap(find.text('核对申请'));

@@ -9,7 +9,10 @@ import '../services/holiday_travel_service.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_date_picker.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_segmented_control.dart';
+import '../widgets/adaptive_switch.dart';
 import '../widgets/design_system/design_system.dart';
 import 'emap_history_page.dart';
 
@@ -203,12 +206,12 @@ class _RegistrationsState extends State<_Registrations> {
 
   Future<void> chooseDates() async {
     final now = DateTime.now();
-    final selected = await showDateRangePicker(
+    final selected = await showAdaptiveDateRangePicker(
       context: context,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 2, 12, 31),
       initialDateRange: dates,
-      helpText: '选择本次离校与预计返校日期',
+      title: '选择本次离校与预计返校日期',
     );
     if (!mounted || selected == null) return;
     if (!HolidayTravel.validDates(selected.start, selected.end)) {
@@ -349,12 +352,12 @@ class _RegistrationsState extends State<_Registrations> {
   Future<void> confirmReturn(HolidayTravel record) async {
     if (submitting || preparing || record['WID'].isEmpty) return;
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showAdaptiveDatePicker(
       context: context,
       initialDate: now,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 2, 12, 31),
-      helpText: '选择实际返校日期',
+      title: '选择实际返校日期',
     );
     if (picked == null || !mounted) return;
     final service = widget.service;
@@ -424,13 +427,10 @@ class _RegistrationsState extends State<_Registrations> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SegmentedButton<bool>(
-          segments: const [
-            ButtonSegment(value: false, label: Text('登记摘要')),
-            ButtonSegment(value: true, label: Text('历史记录')),
-          ],
-          selected: {history},
-          onSelectionChanged: (v) => setState(() => history = v.single),
+        AdaptiveSegmentedControl(
+          value: history ? 1 : 0,
+          segments: const ['登记摘要', '历史记录'],
+          onChanged: (idx) => setState(() => history = idx == 1),
         ),
         const SizedBox(height: TpTokens.sectionGap),
         if (history) ...[
@@ -603,16 +603,14 @@ class _RegistrationsState extends State<_Registrations> {
                       helperText: '仅用于本次页面填报，不写入本地缓存与日志。',
                     ),
                   ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('是否出国/出境'),
+                  AdaptiveSwitchRow(
+                    title: '是否出国/出境',
                     value: abroad,
-                    onChanged: submitting
-                        ? null
-                        : (v) {
-                            abroad = v;
-                            _syncSummaryFromFields();
-                          },
+                    enabled: !submitting,
+                    onChanged: (v) {
+                      abroad = v;
+                      _syncSummaryFromFields();
+                    },
                   ),
                   const SizedBox(height: TpTokens.space2),
                   TextField(

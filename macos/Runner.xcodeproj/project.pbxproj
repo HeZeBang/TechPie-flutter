@@ -40,6 +40,7 @@
 		TPW200000000000000000206 /* TodayOverviewWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW200000000000000000106 /* TodayOverviewWidget.swift */; };
 		TPW200000000000000000208 /* card-bottom.png in Resources */ = {isa = PBXBuildFile; fileRef = TPW200000000000000000108 /* card-bottom.png */; };
 		A716AD2026B149D994791951 /* DeadlineReminderBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A716AD2026B149D994791952 /* DeadlineReminderBridge.swift */; };
+		CC4F9E102E6A10010000A101 /* MacosNativeControlsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F9E112E6A10010000A102 /* MacosNativeControlsPlugin.swift */; };
 		863151EA9960F4B362BE6576 /* DeadlineWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF1C5A3900238226A31054A6 /* DeadlineWidget.swift */; };
 		9890447B4E16EA81E26F77C8 /* DeadlineWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EAD23142838A8BD6B6D99DDA /* DeadlineWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9DEF51B6C29B097558BBF13B /* DeadlineWidgetSupport in Frameworks */ = {isa = PBXBuildFile; productRef = EA8AAD9E783AB728FB40AE35 /* DeadlineWidgetSupport */; };
@@ -112,6 +113,7 @@
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		33CC10F72044A3C60003C045 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Runner/Info.plist; sourceTree = "<group>"; };
 		33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };
+		CC4F9E112E6A10010000A102 /* MacosNativeControlsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacosNativeControlsPlugin.swift; sourceTree = "<group>"; };
 		33CEB47222A05771004F2AC0 /* Flutter-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Debug.xcconfig"; sourceTree = "<group>"; };
 		33CEB47422A05771004F2AC0 /* Flutter-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Release.xcconfig"; sourceTree = "<group>"; };
 		33CEB47722A0578A004F2AC0 /* Flutter-Generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = "Flutter-Generated.xcconfig"; path = "ephemeral/Flutter-Generated.xcconfig"; sourceTree = "<group>"; };
@@ -257,6 +259,7 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
+				CC4F9E112E6A10010000A102 /* MacosNativeControlsPlugin.swift */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
@@ -592,6 +595,7 @@
 				6B21A0E93BEBF45D6366636C /* DeadlineWidgetBridge.swift in Sources */,
 				TPW200000000000000000201 /* HomeWidgetsBridge.swift in Sources */,
 				A716AD2026B149D994791951 /* DeadlineReminderBridge.swift in Sources */,
+				CC4F9E102E6A10010000A101 /* MacosNativeControlsPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

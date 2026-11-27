@@ -13,10 +13,13 @@ import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_segmented_control.dart';
+import '../widgets/adaptive_select.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 import 'generic_webview_page.dart';
 
@@ -33,7 +36,22 @@ class PnpMinorPage extends StatelessWidget {
     if (data == null) {
       return Scaffold(
         backgroundColor: context.tpColors.canvas,
-        appBar: const BlurredAppBar(title: Text('P/NP 与辅修')),
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: 'P/NP 与辅修',
+            leadingItems: const [
+              IosNativeNavigationBarItem(
+                id: 'back',
+                title: '返回',
+                sfSymbol: 'chevron.left',
+                accessibilityLabel: '返回',
+                placementGroup: 'leading-main',
+              ),
+            ],
+            onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
+          ),
+          material: () => const BlurredAppBar(title: Text('P/NP 与辅修')),
+        ),
         body: const CampusPrerequisiteView(
           icon: TpIcons.pnpMinor,
           title: 'P/NP 与辅修',
@@ -153,21 +171,51 @@ class _ApplicationsState extends State<_Applications> {
       backgroundColor: colors.canvas,
       extendBodyBehindAppBar:
           AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
-      appBar: BlurredAppBar(
-        title: const Text('P/NP 与辅修'),
-        actions: [
-          PageRefreshButton(
-            onRefresh: () => refresh(),
-            enabled: s.ready,
-            refreshing: busy,
-          ),
-          if (!isDesktop())
-            IconButton(
-              tooltip: '刷新',
-              icon: const Icon(TpIcons.refresh),
-              onPressed: busy || !s.ready ? null : () => refresh(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: 'P/NP 与辅修',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
             ),
-        ],
+          ],
+          trailingItems: [
+            IosNativeNavigationBarItem(
+              id: 'refresh',
+              sfSymbol: 'arrow.clockwise',
+              accessibilityLabel: '刷新',
+              enabled: !busy && s.ready,
+              placementGroup: 'trailing-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') {
+              unawaited(maybePopAdaptivePage<void>(context));
+            } else if (id == 'refresh') {
+              unawaited(refresh());
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: const Text('P/NP 与辅修'),
+          actions: [
+            PageRefreshButton(
+              onRefresh: () => refresh(),
+              enabled: s.ready,
+              refreshing: busy,
+            ),
+            if (!isDesktop())
+              IconButton(
+                tooltip: '刷新',
+                icon: const Icon(TpIcons.refresh),
+                onPressed: busy || !s.ready ? null : () => refresh(),
+              ),
+          ],
+        ),
       ),
       body: !s.ready
           ? const CampusPrerequisiteView(
@@ -191,20 +239,16 @@ class _ApplicationsState extends State<_Applications> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        SegmentedButton<AcademicApplicationTab>(
-                          segments: const [
-                            ButtonSegment(
-                              value: AcademicApplicationTab.pnp,
-                              label: Text('P/NP'),
-                            ),
-                            ButtonSegment(
-                              value: AcademicApplicationTab.minor,
-                              label: Text('辅修'),
-                            ),
-                          ],
-                          selected: {tab},
-                          onSelectionChanged: (v) {
-                            setState(() => tab = v.single);
+                        AdaptiveSegmentedControl(
+                          value:
+                              tab == AcademicApplicationTab.minor ? 1 : 0,
+                          segments: const ['P/NP', '辅修'],
+                          onChanged: (idx) {
+                            setState(
+                              () => tab = idx == 1
+                                  ? AcademicApplicationTab.minor
+                                  : AcademicApplicationTab.pnp,
+                            );
                             unawaited(refresh());
                           },
                         ),
@@ -238,20 +282,21 @@ class _ApplicationsState extends State<_Applications> {
                         ),
                         if (pnp && s.semesters.isNotEmpty) ...[
                           const SizedBox(height: TpTokens.space2),
-                          DropdownButton<String>(
-                            isExpanded: true,
+                          AdaptiveSelect(
+                            width: double.infinity,
+                            enabled: !busy,
                             value: s.semesters.containsKey(s.selected)
                                 ? s.selected
                                 : null,
-                            items: [
+                            placeholder: '选择学期',
+                            options: [
                               for (final e in s.semesters.entries)
-                                DropdownMenuItem(
+                                AdaptiveSelectOption(
                                   value: e.key,
-                                  child: Text(e.value),
+                                  label: e.value,
                                 ),
                             ],
-                            onChanged:
-                                busy ? null : (v) => refresh(term: v),
+                            onChanged: (v) => refresh(term: v),
                           ),
                         ],
                         if (window != ApplicationWindow.closed) ...[

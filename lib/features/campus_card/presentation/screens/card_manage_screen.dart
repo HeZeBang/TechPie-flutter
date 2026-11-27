@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:techpie/utils/platform.dart';
+import 'package:techpie/widgets/adaptive_segmented_control.dart';
 import 'package:techpie/widgets/page_refresh.dart';
 
 import '../../app/app_providers.dart';
@@ -125,6 +126,14 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
       setState(() => _range = selection.clear ? null : selection.range);
       return;
     }
+    if (usesMacOsNativeControls()) {
+      final selection = await _showMacOsRangePicker();
+      if (selection == null || !mounted) return;
+      await ref.read(appRuntimeProvider).feedback.play(FeedbackEvent.selection);
+      if (!mounted) return;
+      setState(() => _range = selection.clear ? null : selection.range);
+      return;
+    }
     final now = DateTime.now();
     final selected = await showDateRangePicker(
       context: context,
@@ -193,23 +202,14 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 18),
-                child: CupertinoSlidingSegmentedControl<bool>(
-                  groupValue: editingStart,
-                  children: const {
-                    true: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 18),
-                      child: Text('开始日期'),
-                    ),
-                    false: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 18),
-                      child: Text('结束日期'),
-                    ),
-                  },
-                  onValueChanged: (value) {
-                    if (value != null) {
-                      setSheetState(() => editingStart = value);
-                    }
-                  },
+                child: SizedBox(
+                  width: double.infinity,
+                  child: AdaptiveSegmentedControl(
+                    value: editingStart ? 0 : 1,
+                    segments: const ['开始日期', '结束日期'],
+                    onChanged: (index) =>
+                        setSheetState(() => editingStart = index == 0),
+                  ),
                 ),
               ),
               Expanded(
@@ -236,6 +236,132 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
           ),
         ),
       ),),
+    );
+  }
+
+  Future<_DateRangeSelection?> _showMacOsRangePicker() {
+    final now = DateTime.now();
+    final firstDay = DateTime(2020);
+    final lastDay = DateUtils.dateOnly(now.add(const Duration(days: 1)));
+    DateTime clampDay(DateTime value) {
+      final day = DateUtils.dateOnly(value);
+      if (day.isBefore(firstDay)) return firstDay;
+      if (day.isAfter(lastDay)) return lastDay;
+      return day;
+    }
+
+    var start = clampDay(_range?.start ?? DateTime(now.year, now.month, 1));
+    var end = clampDay(_range?.end ?? now);
+    if (end.isBefore(start)) end = start;
+    var editingStart = true;
+
+    return showDialog<_DateRangeSelection>(
+      context: context,
+      useRootNavigator: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final theme = Theme.of(context);
+          final rangeLabel =
+              '${DateFormat('yyyy-MM-dd').format(start)} 至 ${DateFormat('yyyy-MM-dd').format(end)}';
+          return Dialog(
+            backgroundColor: theme.colorScheme.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+              side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.4)),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                    child: Text(
+                      '日期范围',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    child: Column(
+                      children: [
+                        AdaptiveSegmentedControl(
+                          value: editingStart ? 0 : 1,
+                          segments: const ['开始日期', '结束日期'],
+                          onChanged: (index) =>
+                              setDialogState(() => editingStart = index == 0),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          rangeLabel,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: context.gpColors.textPrimary
+                                .withValues(alpha: 0.65),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  CalendarDatePicker(
+                    key: ValueKey(editingStart),
+                    initialDate: editingStart ? start : end,
+                    firstDate: firstDay,
+                    lastDate: lastDay,
+                    onDateChanged: (value) {
+                      setDialogState(() {
+                        if (editingStart) {
+                          start = value;
+                          if (end.isBefore(start)) end = start;
+                        } else {
+                          end = value;
+                          if (start.isAfter(end)) start = end;
+                        }
+                      });
+                    },
+                  ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(
+                            dialogContext,
+                            const _DateRangeSelection.clear(),
+                          ),
+                          child: const Text('不指定日期'),
+                        ),
+                        const Spacer(),
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('取消'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () => Navigator.pop(
+                            dialogContext,
+                            _DateRangeSelection.range(
+                              DateTimeRange(start: start, end: end),
+                            ),
+                          ),
+                          child: const Text('完成'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 

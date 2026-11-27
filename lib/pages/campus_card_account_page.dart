@@ -14,6 +14,7 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_ecard_wizard.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_text_field_group.dart';
 import '../widgets/design_system/tp_card.dart';
 import 'ecard_wizard_copy.dart';
@@ -303,22 +304,25 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
       field = Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          DropdownButtonFormField<EcardOpenIdChannel>(
-            initialValue: _channel,
-            decoration: InputDecoration(labelText: _text('OPENID channel', 'OPENID 渠道')),
-            items: [
+          AdaptiveSelect(
+            label: _text('OPENID channel', 'OPENID 渠道'),
+            width: double.infinity,
+            enabled: enabled,
+            value: _channel.name,
+            options: [
               for (final channel in EcardOpenIdChannel.values)
-                DropdownMenuItem(value: channel, child: Text(channel.label)),
+                AdaptiveSelectOption(
+                  value: channel.name,
+                  label: channel.label,
+                ),
             ],
-            onChanged: enabled
-                ? (channel) {
-                    if (channel == null) return;
-                    setState(() {
-                      _channel = channel;
-                      _error = null;
-                    });
-                  }
-                : null,
+            onChanged: (value) {
+              final channel = EcardOpenIdChannel.values.byName(value);
+              setState(() {
+                _channel = channel;
+                _error = null;
+              });
+            },
           ),
           const SizedBox(height: TpTokens.space3),
           AdaptiveTextFieldGroup(

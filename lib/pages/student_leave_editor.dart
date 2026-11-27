@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart' show ImagePicker, XFile;
 
@@ -8,10 +10,15 @@ import '../services/student_leave_service.dart';
 import '../services/student_leave_submission.dart';
 import '../theme/theme.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_date_picker.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_progress_indicator.dart';
+import '../widgets/adaptive_select.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 Future<bool?> openStudentLeaveEditor(
   BuildContext context,
@@ -188,7 +195,7 @@ class _LeaveEditorState extends State<_LeaveEditor> {
     final start = date('QJKSRQ'), end = date('QJJSRQ');
     final firstDate = edit && start != null && start.isBefore(min) ? start : min;
     final maxYear = [now.year + 2, if (end != null) end.year + 1].reduce((a, b) => a > b ? a : b);
-    final range = await showDateRangePicker(
+    final range = await showAdaptiveDateRangePicker(
       context: context,
       firstDate: firstDate,
       lastDate: DateTime(maxYear, 12, 31),
@@ -196,7 +203,7 @@ class _LeaveEditorState extends State<_LeaveEditor> {
           start != null && end != null && !start.isBefore(firstDate) && !end.isBefore(start)
               ? DateTimeRange(start: start, end: end)
               : null,
-      helpText: '选择请假日期',
+      title: '选择请假日期',
     );
     if (!mounted || invalidAccount || range == null) return;
     setState(() {
@@ -348,53 +355,75 @@ class _LeaveEditorState extends State<_LeaveEditor> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
-        canPop: !busy,
-        child: Scaffold(
-          backgroundColor: context.tpColors.canvas,
-          appBar: BlurredAppBar(title: Text(edit ? '编辑请假' : '填写请假申请')),
-          body: invalidAccount
-              ? const Center(child: Text('账号已切换，请返回请假记录。'))
-              : FutureBuilder<void>(
-                  future: startup,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snapshot.hasError) {
-                      return Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(_leaveError(snapshot.error!)),
-                            TextButton(
-                              onPressed: () => setState(() => startup = load()),
-                              child: const Text('重试'),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-                    return SafeArea(
+  Widget build(BuildContext context) {
+    final title = edit ? '编辑请假' : '填写请假申请';
+    return PopScope(
+      canPop: !busy,
+      child: Scaffold(
+        backgroundColor: context.tpColors.canvas,
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: title,
+            leadingItems: [
+              IosNativeNavigationBarItem(
+                id: 'back',
+                title: '返回',
+                sfSymbol: 'chevron.left',
+                accessibilityLabel: '返回',
+                enabled: !busy,
+                placementGroup: 'leading-main',
+              ),
+            ],
+            onItemPressed: (_) {
+              if (!busy) unawaited(maybePopAdaptivePage<bool>(context));
+            },
+          ),
+          material: () => BlurredAppBar(title: Text(title)),
+        ),
+        body: invalidAccount
+            ? const Center(child: Text('账号已切换，请返回请假记录。'))
+            : FutureBuilder<void>(
+                future: startup,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Center(child: AdaptiveActivityIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(
-                            child: AbsorbPointer(
-                              absorbing: busy || uncertain,
-                              child: SingleChildScrollView(
-                                padding: const EdgeInsets.all(16),
-                                child: TpPageBody(child: applicationFields()),
-                              ),
-                            ),
+                          Text(_leaveError(snapshot.error!)),
+                          TextButton(
+                            onPressed: () => setState(() => startup = load()),
+                            child: const Text('重试'),
                           ),
-                          submitBar(),
                         ],
                       ),
                     );
-                  },
-                ),
-        ),
-      );
+                  }
+                  return SafeArea(
+                    top: false,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: AbsorbPointer(
+                            absorbing: busy || uncertain,
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.all(16),
+                              child: TpPageBody(child: applicationFields()),
+                            ),
+                          ),
+                        ),
+                        submitBar(),
+                      ],
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
+  }
 
   Widget applicationFields() => Form(
         key: _fields,
@@ -522,21 +551,52 @@ class _LeaveEditorState extends State<_LeaveEditor> {
     Map<String, String> options,
     ValueChanged<String?> onChanged, {
     bool required = false,
-  }) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: DropdownButtonFormField<String>(
-          key: ValueKey((label, selected, options.length)),
-          isExpanded: true,
-          initialValue: options.containsKey(selected) ? selected : null,
-          decoration: InputDecoration(labelText: label),
-          items: [
-            for (final e in options.entries) DropdownMenuItem(value: e.key, child: Text(e.value)),
-          ],
-          onChanged: options.isEmpty ? null : onChanged,
-          validator: (v) => required && v == null ? '请选择$label' : null,
-        ),
-      );
+  }) {
+    final validValue = options.containsKey(selected) ? selected : null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: FormField<String>(
+        key: ValueKey((label, selected, options.length)),
+        initialValue: validValue,
+        validator: (v) =>
+            required && (v == null || v.isEmpty) ? '请选择$label' : null,
+        builder: (field) {
+          final colors = context.tpColors;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AdaptiveSelect(
+                label: label,
+                width: double.infinity,
+                enabled: options.isNotEmpty,
+                value: field.value,
+                placeholder: '请选择$label',
+                options: [
+                  for (final e in options.entries)
+                    AdaptiveSelectOption(value: e.key, label: e.value),
+                ],
+                onChanged: (v) {
+                  field.didChange(v);
+                  onChanged(v);
+                },
+              ),
+              if (field.hasError)
+                Padding(
+                  padding: const EdgeInsets.only(top: TpTokens.space1),
+                  child: Text(
+                    field.errorText!,
+                    style: TpTypography.itemMeta(colors).copyWith(
+                      color: colors.dangerRed,
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
   Widget field(String code, String label, {TextInputType? keyboard, int lines = 1, int? limit}) =>
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),

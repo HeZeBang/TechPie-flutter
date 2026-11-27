@@ -38,6 +38,7 @@ import 'package:techpie/services/third_party_auth_service.dart';
 import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/theme/theme.dart';
+import 'package:techpie/widgets/adaptive_checkbox.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
 import 'package:techpie/widgets/adaptive_navigation_scaffold.dart';
 import 'package:techpie/widgets/course_detail_panel.dart';
@@ -572,7 +573,7 @@ void main() {
     await tester.tap(find.byTooltip('编辑首页快捷'));
     await tester.pumpAndSettle();
     for (final title in ['学生请假', '学生津贴']) {
-      final tile = find.widgetWithText(CheckboxListTile, title);
+      final tile = find.widgetWithText(AdaptiveCheckboxRow, title);
       await tester.ensureVisible(tile);
       await tester.tap(tile);
       await tester.pumpAndSettle();

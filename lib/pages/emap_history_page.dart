@@ -8,11 +8,13 @@ import '../services/campus/emap_account_cache.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 import 'generic_webview_page.dart';
 
@@ -107,21 +109,51 @@ class _AccountHistoryState extends State<_AccountHistory> {
     );
     return Scaffold(
       backgroundColor: colors.canvas,
-      appBar: BlurredAppBar(
-        title: Text(page.title),
-        actions: [
-          PageRefreshButton(
-            onRefresh: refresh,
-            enabled: ready,
-            refreshing: busy,
-          ),
-          if (!isDesktop())
-            IconButton(
-              tooltip: '刷新',
-              icon: const Icon(TpIcons.refresh),
-              onPressed: busy || !ready ? null : refresh,
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: page.title,
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
             ),
-        ],
+          ],
+          trailingItems: [
+            IosNativeNavigationBarItem(
+              id: 'refresh',
+              sfSymbol: 'arrow.clockwise',
+              accessibilityLabel: '刷新',
+              enabled: !busy && ready,
+              placementGroup: 'trailing-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') {
+              unawaited(maybePopAdaptivePage<void>(context));
+            } else if (id == 'refresh') {
+              unawaited(refresh());
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: Text(page.title),
+          actions: [
+            PageRefreshButton(
+              onRefresh: refresh,
+              enabled: ready,
+              refreshing: busy,
+            ),
+            if (!isDesktop())
+              IconButton(
+                tooltip: '刷新',
+                icon: const Icon(TpIcons.refresh),
+                onPressed: busy || !ready ? null : refresh,
+              ),
+          ],
+        ),
       ),
       body: !ready
           ? CampusPrerequisiteView(

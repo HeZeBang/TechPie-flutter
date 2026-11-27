@@ -8,11 +8,14 @@ import '../services/campus/campus_session.dart';
 import '../services/elearning_service.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_segmented_control.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'elearning_course_detail_page.dart';
 
 class ElearningHubPage extends StatelessWidget {
@@ -35,16 +38,35 @@ class _Hub extends StatefulWidget {
   State<_Hub> createState() => _HubState();
 }
 
-class _HubState extends State<_Hub> {
+class _HubState extends State<_Hub> with SingleTickerProviderStateMixin {
   final _searchCtrl = TextEditingController();
+  late final TabController _tabs = TabController(length: 2, vsync: this)
+    ..addListener(_onTabChanged);
   final GlobalKey<BlackboardListState<BlackboardCourse>> _coursesKey =
       GlobalKey();
   final GlobalKey<BlackboardListState<BlackboardAnnouncement>>
       _announcementsKey = GlobalKey();
+  int _tabIndex = 0;
   String query = '';
+
+  void _onTabChanged() {
+    if (!mounted || _tabIndex == _tabs.index) return;
+    setState(() => _tabIndex = _tabs.index);
+  }
+
+  void _refreshActiveTab() {
+    if (_tabs.index == 0) {
+      _coursesKey.currentState?.triggerRefresh();
+    } else {
+      _announcementsKey.currentState?.triggerRefresh();
+    }
+  }
 
   @override
   void dispose() {
+    _tabs
+      ..removeListener(_onTabChanged)
+      ..dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -52,137 +74,196 @@ class _HubState extends State<_Hub> {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: colors.canvas,
-        appBar: BlurredAppBar(
-          title: const Text('Blackboard 课程'),
-          actions: [
-            Builder(
-              builder: (tabContext) => IconButton(
-                tooltip: '刷新',
-                icon: const Icon(TpIcons.refresh),
-                onPressed: () {
-                  final idx = DefaultTabController.of(tabContext).index;
-                  if (idx == 0) {
-                    _coursesKey.currentState?.triggerRefresh();
-                  } else {
-                    _announcementsKey.currentState?.triggerRefresh();
-                  }
-                },
-              ),
+    return Scaffold(
+      backgroundColor: colors.canvas,
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: 'Blackboard 课程',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
             ),
           ],
-          bottom: const TabBar(
-            tabs: [Tab(text: '我的课程'), Tab(text: '公告')],
+          trailingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'refresh',
+              sfSymbol: 'arrow.clockwise',
+              accessibilityLabel: '刷新',
+              placementGroup: 'trailing-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') {
+              unawaited(maybePopAdaptivePage<void>(context));
+            } else if (id == 'refresh') {
+              _refreshActiveTab();
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: const Text('Blackboard 课程'),
+          actions: [
+            IconButton(
+              tooltip: '刷新',
+              icon: const Icon(TpIcons.refresh),
+              onPressed: _refreshActiveTab,
+            ),
+          ],
+          bottom: TabBar(
+            controller: _tabs,
+            tabs: const [Tab(text: '我的课程'), Tab(text: '公告')],
           ),
         ),
-        body: TabBarView(
-          children: [
-            Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    TpTokens.pageHorizontalPadding,
-                    TpTokens.space3,
-                    TpTokens.pageHorizontalPadding,
-                    TpTokens.space2,
-                  ),
-                  child: TpPageBody(
-                    maxWidth: 880,
-                    child: TextField(
-                      controller: _searchCtrl,
-                      decoration: InputDecoration(
-                        labelText: '搜索课程名称或代码',
-                        prefixIcon: const Icon(TpIcons.search),
-                        suffixIcon: query.isEmpty
-                            ? null
-                            : IconButton(
-                                tooltip: '清除搜索',
-                                icon: const Icon(TpIcons.close),
-                                onPressed: () {
-                                  _searchCtrl.clear();
-                                  setState(() => query = '');
-                                },
-                              ),
-                      ),
-                      onChanged: (value) =>
-                          setState(() => query = value.trim().toLowerCase()),
-                    ),
-                  ),
+      ),
+      body: Column(
+        children: [
+          AdaptiveNavigationScaffold.adaptiveChrome(
+            ios: () => Padding(
+              padding: const EdgeInsets.fromLTRB(
+                TpTokens.pageHorizontalPadding,
+                TpTokens.space2,
+                TpTokens.pageHorizontalPadding,
+                0,
+              ),
+              child: TpPageBody(
+                maxWidth: 880,
+                child: AdaptiveSegmentedControl(
+                  value: _tabIndex,
+                  segments: const ['我的课程', '公告'],
+                  shrinkWrap: true,
+                  onChanged: _tabs.animateTo,
                 ),
-                Expanded(
-                  child: BlackboardList<BlackboardCourse>(
-                    key: _coursesKey,
-                    load: () => widget.service.courses(),
-                    refresh: () => widget.service.courses(refresh: true),
-                    cached: widget.service.cachedCourses,
-                    empty: '暂无课程',
-                    buildRows: (context, items) {
-                      final terms = <String, List<BlackboardCourse>>{};
-                      for (final course in items.where(
-                        (c) =>
-                            '${c.name} ${c.code}'.toLowerCase().contains(query),
-                      )) {
-                        (terms[course.term.isEmpty ? '其他学期' : course.term] ??=
-                                [])
-                            .add(course);
-                      }
-                      return [
-                        if (terms.isEmpty)
-                          const TpStateCard.empty(
-                            icon: TpIcons.search,
-                            title: '没有匹配的课程',
-                            compact: true,
-                          ),
-                        for (final term in terms.entries) ...[
-                          Padding(
-                            padding: const EdgeInsets.only(
-                              top: TpTokens.space3,
-                              bottom: TpTokens.space2,
-                            ),
-                            child: Text(
-                              term.key,
-                              style: TpTypography.cardTitle(colors),
-                            ),
-                          ),
-                          TpCard(
-                            child: Column(
-                              children: [
-                                for (final course in term.value)
-                                  ListTile(
-                                    title: Text(course.name),
-                                    subtitle: Text(course.code),
-                                    trailing: const Icon(
-                                      TpIcons.chevronRight,
-                                      size: TpTokens.iconS,
-                                    ),
-                                    onTap: () => openBlackboardCourse(
-                                      context,
-                                      widget.service,
-                                      course,
-                                    ),
+              ),
+            ),
+            material: () => const SizedBox.shrink(),
+          ),
+          Expanded(
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        TpTokens.pageHorizontalPadding,
+                        TpTokens.space3,
+                        TpTokens.pageHorizontalPadding,
+                        TpTokens.space2,
+                      ),
+                      child: TpPageBody(
+                        maxWidth: 880,
+                        child: TextField(
+                          controller: _searchCtrl,
+                          decoration: InputDecoration(
+                            labelText: '搜索课程名称或代码',
+                            prefixIcon: const Icon(TpIcons.search),
+                            suffixIcon: query.isEmpty
+                                ? null
+                                : IconButton(
+                                    tooltip: '清除搜索',
+                                    icon: const Icon(TpIcons.close),
+                                    onPressed: () {
+                                      _searchCtrl.clear();
+                                      setState(() => query = '');
+                                    },
                                   ),
-                              ],
-                            ),
                           ),
-                        ],
-                      ];
-                    },
-                  ),
+                          onChanged: (value) =>
+                              setState(() => query = value.trim().toLowerCase()),
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: BlackboardList<BlackboardCourse>(
+                        key: _coursesKey,
+                        load: () => widget.service.courses(),
+                        refresh: () => widget.service.courses(refresh: true),
+                        cached: widget.service.cachedCourses,
+                        empty: '暂无课程',
+                        buildRows: (context, items) {
+                          final terms = <String, List<BlackboardCourse>>{};
+                          for (final course in items.where(
+                            (c) => '${c.name} ${c.code}'
+                                .toLowerCase()
+                                .contains(query),
+                          )) {
+                            (terms[course.term.isEmpty ? '其他学期' : course.term] ??=
+                                    [])
+                                .add(course);
+                          }
+                          final termEntries = terms.entries.toList();
+                          final orderedTerms = [
+                            for (var i = 0; i < termEntries.length; i++)
+                              (index: i, entry: termEntries[i]),
+                          ]..sort((a, b) {
+                              final byTerm = compareBlackboardTermNames(
+                                a.entry.key,
+                                b.entry.key,
+                              );
+                              return byTerm != 0
+                                  ? byTerm
+                                  : a.index.compareTo(b.index);
+                            });
+                          return [
+                            if (orderedTerms.isEmpty)
+                              const TpStateCard.empty(
+                                icon: TpIcons.search,
+                                title: '没有匹配的课程',
+                                compact: true,
+                              ),
+                            for (final item in orderedTerms) ...[
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  top: TpTokens.space3,
+                                  bottom: TpTokens.space2,
+                                ),
+                                child: Text(
+                                  item.entry.key,
+                                  style: TpTypography.cardTitle(colors),
+                                ),
+                              ),
+                              TpCard(
+                                child: Column(
+                                  children: [
+                                    for (final course in item.entry.value)
+                                      ListTile(
+                                        title: Text(course.name),
+                                        subtitle: Text(course.code),
+                                        trailing: const Icon(
+                                          TpIcons.chevronRight,
+                                          size: TpTokens.iconS,
+                                        ),
+                                        onTap: () => openBlackboardCourse(
+                                          context,
+                                          widget.service,
+                                          course,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ];
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                BlackboardList<BlackboardAnnouncement>(
+                  key: _announcementsKey,
+                  load: () => widget.service.announcements(),
+                  cached: widget.service.cachedAnnouncements,
+                  empty: '暂无公告',
+                  buildRows: announcementRows,
                 ),
               ],
             ),
-            BlackboardList<BlackboardAnnouncement>(
-              key: _announcementsKey,
-              load: () => widget.service.announcements(),
-              cached: widget.service.cachedAnnouncements,
-              empty: '暂无公告',
-              buildRows: announcementRows,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -249,7 +330,24 @@ class BlackboardSessionView extends StatelessWidget {
             (owner != null && owner != current)) {
           return Scaffold(
             backgroundColor: context.tpColors.canvas,
-            appBar: const BlurredAppBar(title: Text('Blackboard 课程')),
+            appBar: AdaptiveNavigationScaffold.adaptiveBar(
+              ios: () => IosNativeNavigationBar(
+                title: 'Blackboard 课程',
+                leadingItems: const [
+                  IosNativeNavigationBarItem(
+                    id: 'back',
+                    title: '返回',
+                    sfSymbol: 'chevron.left',
+                    accessibilityLabel: '返回',
+                    placementGroup: 'leading-main',
+                  ),
+                ],
+                onItemPressed: (_) =>
+                    unawaited(maybePopAdaptivePage<void>(context)),
+              ),
+              material: () =>
+                  const BlurredAppBar(title: Text('Blackboard 课程')),
+            ),
             body: CampusPrerequisiteView(
               icon: TpIcons.graduation,
               title: 'Blackboard 课程',
