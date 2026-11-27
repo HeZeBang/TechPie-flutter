@@ -313,12 +313,12 @@ class _FacetedPBrandPainter extends CustomPainter {
   ];
 
   static const List<Color> _darkTechRedFacets = [
+    Color(0xFFFF8E97),
     Color(0xFFFF737E),
+    Color(0xFFF96170),
     Color(0xFFF24C5A),
-    Color(0xFFE03140),
-    Color(0xFFC41E2D),
-    Color(0xFFA41220),
-    Color(0xFF820B17),
+    Color(0xFFE94452),
+    Color(0xFFD73947),
   ];
 
   static const List<Color> _whiteFacets = [

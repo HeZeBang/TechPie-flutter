@@ -1192,7 +1192,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     final String statusText;
     if (urgentCount > 0) {
-      statusText = '$urgentCount 项 <24h';
+      statusText = '$urgentCount 项需关注';
     } else if (pending.isEmpty) {
       statusText = '全部完成';
     } else {
