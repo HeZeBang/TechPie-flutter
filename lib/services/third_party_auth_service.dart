@@ -12,6 +12,7 @@ import 'http_client.dart';
 import 'ids/ids_client.dart';
 import 'session/session_node.dart';
 import 'session/session_tree.dart';
+import 'startup_trace.dart';
 import 'storage_service.dart';
 import 'sync_envelope.dart' show SyncTombstone;
 
@@ -47,9 +48,35 @@ class ThirdPartyAuthService extends ChangeNotifier {
   // (reset to false) the moment _onTreeChanged reads it.
   bool _pendingForcePush = false;
   final IdsClient _ids;
+  final Duration derivedCookieTimeout;
   IdsSyncBinding? _idsBinding;
   int _idsGeneration = 0;
   Future<void> _idsWrites = Future.value();
+
+  // Boot hydration gate. Network entry points await [deferredHydration], so
+  // the first frame can run before the four derived cookies are read.
+  final Completer<void> _deferredHydrationGate = Completer<void>();
+  bool _deferredHydrationArmed = false;
+  Future<void>? _deferredHydrationFuture;
+  Future<void>? _criticalInitialization;
+
+  // Bumped before any flow that clears the in-memory derived cookies. The
+  // deferred read captures this revision and refuses to apply a cookie batch
+  // that raced with a clear/replace.
+  int _derivedCookieRevision = 0;
+
+  // Depth of a clear/replace that can span awaits. Hydration refuses to start
+  // or apply while a mutation is in flight, even if that mutation already
+  // bumped the revision before hydration sampled it.
+  int _derivedCookieMutationDepth = 0;
+
+  // Owner/epoch/revision/child epochs fixed at the end of critical boot. The
+  // deferred read compares against this snapshot, not against state sampled
+  // after a mutation may already have started.
+  ThirdPartyAccount? _bootIdsOwner;
+  int _bootIdsEpoch = 0;
+  int _bootDerivedRevision = 0;
+  Map<String, int> _bootChildEpochs = const {};
 
   // Serialize the short persistence/commit phase, never network or captcha waits.
   Future<T> _writeIds<T>(Future<T> Function() action) {
@@ -85,8 +112,12 @@ class ThirdPartyAuthService extends ChangeNotifier {
   final Map<String, RenewStatus> _renewStatuses = {};
   RenewStatus? renewStatus(String nodeId) => _renewStatuses[nodeId];
 
-  ThirdPartyAuthService(this._storage, this._http, {IdsClient? idsClient})
-      : _ids = idsClient ?? IdsClient() {
+  ThirdPartyAuthService(
+    this._storage,
+    this._http, {
+    IdsClient? idsClient,
+    this.derivedCookieTimeout = const Duration(seconds: 2),
+  }) : _ids = idsClient ?? IdsClient() {
     _tree = SessionTree(
       persist: _persistAccount,
       localAccountRenew: _renewIdsAccount,
@@ -98,6 +129,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
       recordRenewStatus: _recordRenewStatus,
       persistProbe: _persistProbe,
       persistRenewTimestamp: _persistRenewTimestamp,
+      awaitHydration: _awaitDeferredHydration,
     );
     // Tree node notifications propagate to this service's listeners (UI,
     // AssignmentService auto-refetch, etc.) and the cloud-sync push hook.
@@ -296,10 +328,39 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// Student id surfaced by the ids binding, or '' if unbound.
   String get idsStudentId => _tree.ids.account?.idsStudentId ?? '';
 
-  /// Hydrate bindings and per-device sessions without network requests.
+  /// Arm the network gate before critical hydration. Any campus network
+  /// entry point reached before [hydrateDeferred] waits for the gate.
+  void armDeferredHydration() {
+    _deferredHydrationArmed = true;
+  }
+
+  /// Completed once derived-cookie hydration has finished, failed, or been
+  /// skipped. Campus network entry points await this.
+  Future<void> get deferredHydration =>
+      _deferredHydrationArmed ? _deferredHydrationGate.future : Future<void>.value();
+
+  Future<void> _awaitDeferredHydration() => deferredHydration;
+
+  /// Full initialization, kept for tests and non-boot callers. App boot uses
+  /// [initializeCritical] + [hydrateDeferred] so the first frame does not wait
+  /// for the four derived cookies.
   Future<void> initialize() async {
+    armDeferredHydration();
+    await initializeCritical();
+    await hydrateDeferred();
+  }
+
+  /// Load what the first frame needs: device id, accounts, IDS session and
+  /// renew metadata. Contains no derived-cookie reads.
+  Future<void> initializeCritical() =>
+      _criticalInitialization ??= _initializeCritical();
+
+  Future<void> _initializeCritical() async {
+    StartupTrace.mark('tp.begin');
     _deviceId = await _storage.ensureDeviceId();
+    StartupTrace.mark('tp.device_id');
     final loaded = await _storage.loadAllThirdPartyAccounts();
+    StartupTrace.mark('tp.accounts_loaded');
     _idsBinding = IdsSyncBinding.fromAccount(
       loaded.where((a) => a.platform == ThirdPartyPlatform.ids).firstOrNull,
     );
@@ -328,15 +389,10 @@ class ThirdPartyAuthService extends ChangeNotifier {
       }
       _tree.setAccount(acc.platform, acc);
     }
-    // Hydrate child node derived cookies so cold start can skip the SSO
-    // bounce. These are best-effort — if stale, withCookie's 401 retry will
-    // re-mint transparently.
-    for (final id in const ['eams', 'elearning', 'egateApp', 'oa']) {
-      final cookie = await _storage.loadDerivedCookie(id);
-      _tree.setDerivedCookie(id, cookie);
-    }
-    // Hydrate the renew-status indicator cache (+ each node's in-memory
-    // copy) so the linked-accounts UI can render a status dot immediately.
+    // Derived cookies are intentionally absent here; hydrateDeferred reads
+    // them after the first frame. Renew-status/timestamp metadata stays in
+    // the critical path: it is SharedPreferences-only and racing it with a
+    // later challenge would overwrite newer state.
     for (final id in _allSessionNodeIds) {
       final status = _storage.loadRenewStatus(id);
       if (status != null) _renewStatuses[id] = status;
@@ -360,15 +416,148 @@ class ThirdPartyAuthService extends ChangeNotifier {
         await node.scheduleNextRenew();
       }
     }
+    StartupTrace.mark('tp.renew_timestamps');
     final key = _idsBinding?.credential;
     if (key != null && (!usesIdsPasskey || _tree.ids.account?.account != key.username)) {
       await _setIdsSession(_idsAccount(const {}));
     } else if (key == null && usesIdsPasskey) {
       await _setIdsSession(null);
     }
-    _initialized = true;
+    _bootIdsOwner = _tree.ids.account;
+    _bootIdsEpoch = _tree.ids.epoch;
+    _bootDerivedRevision = _derivedCookieRevision;
+    _bootChildEpochs = {
+      'eams': _tree.eams.epoch,
+      'elearning': _tree.elearning.epoch,
+      'egateApp': _tree.egateApp.epoch,
+      'oa': _tree.oa.epoch,
+    };
+    StartupTrace.mark('tp.critical_done');
     notifyListeners();
+    StartupTrace.mark('tp.notified');
   }
+
+  /// Read the four derived cookies after the first frame. Single-flight;
+  /// completes the network gate on success, failure, or skip.
+  Future<void> hydrateDeferred() {
+    _deferredHydrationArmed = true;
+    return _deferredHydrationFuture ??= _hydrateDeferred();
+  }
+
+  Future<void> _hydrateDeferred() async {
+    var pendingRenewWrites = <String>[];
+    ThirdPartyAccount? bootOwner;
+    var bootEpoch = 0;
+    var bootRevision = 0;
+    try {
+      await initializeCritical();
+      bootOwner = _bootIdsOwner;
+      // No usable boot IDS owner: the cookies cannot help, and reading them
+      // would touch private data for nothing. A mutation that spans awaits
+      // also blocks hydration; its revision may already be sampled.
+      if (bootOwner == null ||
+          !_tree.ids.isAvailable ||
+          _derivedCookieMutationDepth != 0) {
+        StartupTrace.mark('tp.derived_skipped');
+        return;
+      }
+      bootEpoch = _bootIdsEpoch;
+      bootRevision = _bootDerivedRevision;
+      final stopwatch = Stopwatch()..start();
+      final childEpochs = _bootChildEpochs;
+      final cookies = <String, String>{};
+      for (final id in const ['eams', 'elearning', 'egateApp', 'oa']) {
+        if (!_sameIdsOwner(bootOwner, bootEpoch, bootRevision)) return;
+        final remaining = derivedCookieTimeout - stopwatch.elapsed;
+        if (remaining <= Duration.zero) break;
+        try {
+          final cookie = await _storage.loadDerivedCookie(id).timeout(remaining);
+          if (!_sameIdsOwner(bootOwner, bootEpoch, bootRevision)) return;
+          if (cookie != null && cookie.isNotEmpty) cookies[id] = cookie;
+        } catch (_) {
+          // One missing/failing key must not discard cookies that were read
+          // successfully. A late result after this timeout is never applied.
+          if (!_sameIdsOwner(bootOwner, bootEpoch, bootRevision)) return;
+          continue;
+        }
+      }
+      // A child renewal invalidates its cookie while this batch is in flight.
+      if (!_sameIdsOwner(bootOwner, bootEpoch, bootRevision)) return;
+      for (final entry in childEpochs.entries) {
+        if (_sessionNode(entry.key)?.epoch != entry.value) return;
+      }
+      // Apply only non-null cookies, atomically and with no awaits: a null
+      // would wipe the renew timestamp seeded by _setIdsSession.
+      pendingRenewWrites = [
+        for (final id in cookies.keys)
+          if (_sessionNode(id)?.nextRenewTimestamp == null) id,
+      ];
+      for (final entry in cookies.entries) {
+        _tree.setDerivedCookie(entry.key, entry.value);
+      }
+      StartupTrace.mark('tp.derived_cookies');
+    } catch (_) {
+      // Derived cookies are an optimization; a failed read must not take the
+      // app down. The gate still completes and withCookie's 401 retry can
+      // re-mint a fresh cookie.
+      StartupTrace.mark('tp.derived_failed');
+    } finally {
+      _initialized = true;
+      StartupTrace.mark('tp.initialized');
+      if (!_deferredHydrationGate.isCompleted) {
+        _deferredHydrationGate.complete();
+      }
+      // Preserve the old initialize() behavior of persisting a missing renew
+      // timestamp, but only after the gate is open and with an owner guard so
+      // a rebind cannot be overwritten by this delayed write.
+      if (pendingRenewWrites.isNotEmpty && bootOwner != null) {
+        unawaited(
+          _persistRenewTimestamps(
+            pendingRenewWrites,
+            bootOwner,
+            bootEpoch,
+            bootRevision,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _persistRenewTimestamps(
+    List<String> ids,
+    ThirdPartyAccount owner,
+    int epoch,
+    int revision,
+  ) async {
+    for (final id in ids) {
+      if (!_sameIdsOwner(owner, epoch, revision) ||
+          _derivedCookieMutationDepth != 0) {
+        return;
+      }
+      final node = _sessionNode(id);
+      if (node == null || !node.isAvailable) continue;
+      try {
+        await node.scheduleNextRenew().timeout(const Duration(seconds: 1));
+      } catch (_) {
+        // Best-effort metadata; never blocks the network gate.
+      }
+    }
+  }
+
+  Future<T> _duringDerivedCookieMutation<T>(Future<T> Function() action) async {
+    _derivedCookieMutationDepth++;
+    try {
+      return await action();
+    } finally {
+      _derivedCookieMutationDepth--;
+    }
+  }
+
+  bool _sameIdsOwner(ThirdPartyAccount owner, int epoch, int revision) =>
+      identical(_tree.ids.account, owner) &&
+      _tree.ids.epoch == epoch &&
+      _derivedCookieRevision == revision &&
+      _derivedCookieMutationDepth == 0;
 
   /// Look up a [SessionNode] by its stable string id (matches
   /// [ThirdPartyPlatform.id] for top-level nodes, plus 'eams'/'elearning').
@@ -404,6 +593,7 @@ class ThirdPartyAuthService extends ChangeNotifier {
   }
 
   Future<bool> refreshNode(SessionNode node) async {
+    await deferredHydration;
     final parent = node.parent;
     final owner = parent?.account;
     final epoch = parent?.epoch;
@@ -418,7 +608,11 @@ class ThirdPartyAuthService extends ChangeNotifier {
     return node.renew();
   }
 
-  Future<void> _setIdsSession(ThirdPartyAccount? account) async {
+  Future<void> _setIdsSession(ThirdPartyAccount? account) =>
+      _duringDerivedCookieMutation(() => _setIdsSessionNow(account));
+
+  Future<void> _setIdsSessionNow(ThirdPartyAccount? account) async {
+    ++_derivedCookieRevision;
     // Invalidate the old owner and every child synchronously. Late CAS/probe
     // results must fail their owner checks before any storage await below.
     // Rebinding the same user must also invalidate in-flight timetable writes.
@@ -680,7 +874,11 @@ class ThirdPartyAuthService extends ChangeNotifier {
   /// [SyncService.pull] to restore a cloud-fetched snapshot: clears every
   /// existing platform binding, writes each entry in [next] to secure storage,
   /// and rebuilds the in-memory map. Fires a single notification.
-  Future<void> replaceAll(List<ThirdPartyAccount> next) async {
+  Future<void> replaceAll(List<ThirdPartyAccount> next) =>
+      _duringDerivedCookieMutation(() => _replaceAllNow(next));
+
+  Future<void> _replaceAllNow(List<ThirdPartyAccount> next) async {
+    ++_derivedCookieRevision;
     final currentCampus = _tree.ids.account;
     final nextCampus = next.where((a) => a.platform == ThirdPartyPlatform.ids).firstOrNull;
     if (currentCampus != null &&
@@ -848,8 +1046,12 @@ class ThirdPartyAuthService extends ChangeNotifier {
     return failed;
   }
 
-  Future<void> clearAll() async {
+  Future<void> clearAll() =>
+      _duringDerivedCookieMutation(_clearAllNow);
+
+  Future<void> _clearAllNow() async {
     ++_idsGeneration;
+    ++_derivedCookieRevision;
     await _writeIds(() async {
       _suppressSyncPush = true;
       try {

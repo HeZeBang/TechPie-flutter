@@ -420,6 +420,62 @@ void main() {
     // Eams renew was attempted once (first-level minting).
     expect(client.eamsCalls, 1);
   });
+
+  test('concurrent renew calls share the identical Future', () async {
+    final first = tree.ids.renew();
+    final second = tree.ids.renew();
+    expect(identical(first, second), isTrue);
+    await Future.wait([first, second]);
+    expect(client.renewCalls, 1);
+  });
+
+  test('renewIfDue waits for the boot hydration gate', () async {
+    final gate = Completer<void>();
+    final gated = SessionTree(
+      persist: (_, {force = false}) async {},
+      localAccountRenew: client.renewAccount,
+      localCookieMint: client.mintCookie,
+      http: httpClient,
+      baseUrl: () => 'https://backend.test',
+      awaitHydration: () => gate.future,
+    );
+    gated.ids.setAccount(seedAccount());
+
+    final pending = gated.eams.renewIfDue();
+    await Future<void>.delayed(Duration.zero);
+    expect(client.eamsCalls, 0);
+    gate.complete();
+    expect(await pending, isTrue);
+    expect(client.eamsCalls, 1);
+  });
+
+  test('withCookie waits for the boot hydration gate', () async {
+    final gate = Completer<void>();
+    final gated = SessionTree(
+      persist: (_, {force = false}) async {},
+      localAccountRenew: client.renewAccount,
+      localCookieMint: client.mintCookie,
+      http: httpClient,
+      baseUrl: () => 'https://backend.test',
+      awaitHydration: () => gate.future,
+    );
+    gated.ids.setAccount(seedAccount());
+
+    var called = false;
+    final pending = gated.withCookie<bool>(
+      gated.ids,
+      (cp) async {
+        called = true;
+        return const CookieAction(true, expired: false);
+      },
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(called, isFalse);
+
+    gate.complete();
+    expect(await pending, isTrue);
+    expect(called, isTrue);
+  });
 }
 
 /// Controlled local session renewals plus HTTP responses for business requests

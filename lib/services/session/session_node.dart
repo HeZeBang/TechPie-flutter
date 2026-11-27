@@ -260,6 +260,12 @@ class SessionNode extends ChangeNotifier {
   final KeepaliveConfig? keepaliveConfig;
   final BaseUrlGetter baseUrl;
 
+  /// Optional boot gate. Network entry points await this before reading
+  /// availability/epochs or acquiring their single-flight future, so a
+  /// deferred secure-storage hydration can finish first. Null in tests and
+  /// for callers that never arm boot hydration.
+  Future<void> Function()? awaitHydration;
+
   final List<SessionNode> _children = [];
   List<SessionNode> get children => List.unmodifiable(_children);
 
@@ -432,6 +438,7 @@ class SessionNode extends ChangeNotifier {
   }
 
   Future<bool> renewIfDue() async {
+    await awaitHydration?.call();
     if (!canRenew) return false;
     if (!isAvailable) return renew();
     if (!isRenewDue) return true;
@@ -522,6 +529,7 @@ class SessionNode extends ChangeNotifier {
   /// Does NOT mutate session state, persist, or trigger cascading renews.
   /// Network/probe failures preserve the previous display name.
   Future<KeepaliveResult> probe({bool silent = false}) async {
+    await awaitHydration?.call();
     final cfg = keepaliveConfig;
     if (cfg == null) {
       return const KeepaliveResult(false, display: 'no keepalive config');
@@ -635,7 +643,7 @@ class SessionNode extends ChangeNotifier {
   /// Mode-specific renew. MUST persist refreshed credentials (top-level) or
   /// mint the downstream cookie (non-top-level) and call [markRenewed] on
   /// success. Returns true on success, false on failure.
-  Future<bool> doRenew() async {
+  Future<bool> _doRenew() async {
     switch (renewMode) {
       case RenewMode.idsPasskey:
         return _renewIdsSession();
@@ -760,10 +768,19 @@ class SessionNode extends ChangeNotifier {
   /// so a concurrent caller can never slip past the single-flight guard
   /// mid-attempt.
   Future<bool> renew() {
-    if (_renewInFlight != null) return _renewInFlight!;
-    final f = _renewTracked().whenComplete(() => _renewInFlight = null);
-    _renewInFlight = f;
-    return f;
+    final pending = _renewInFlight;
+    if (pending != null) return pending;
+    late final Future<bool> future;
+    future = _renewWithGate().whenComplete(() {
+      if (identical(_renewInFlight, future)) _renewInFlight = null;
+    });
+    _renewInFlight = future;
+    return future;
+  }
+
+  Future<bool> _renewWithGate() async {
+    await awaitHydration?.call();
+    return _renewTracked();
   }
 
   /// Wraps [doRenew] to record the outcome (for the linked-accounts status
@@ -775,7 +792,7 @@ class SessionNode extends ChangeNotifier {
   Future<bool> _renewTracked() async {
     _lastRenewWasCredentialError = false;
     lastRenewError = null;
-    final ok = await doRenew();
+    final ok = await _doRenew();
     if (ok) await scheduleNextRenew();
     if (ok && keepaliveConfig != null) {
       final owner = _account;
@@ -818,6 +835,7 @@ class SessionNode extends ChangeNotifier {
   /// concurrent caller (epoch advanced). Returns false only when a renew
   /// actually ran and failed, or the node is unavailable.
   Future<bool> renewIfNeeded(int beforeEpoch) async {
+    await awaitHydration?.call();
     if (!isAvailable && !canRenew) return false;
     // A concurrent renew already advanced past the caller's snapshot —
     // the cookies the caller will re-read are already fresh. Skip.

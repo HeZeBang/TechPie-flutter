@@ -78,7 +78,8 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
               : campusCardHttpTrace(_debugLogger),
         );
     unawaited(CoreErrorCatalog.initialize());
-    watchSync = WatchSyncService(runtime, _sessionStore, sessionEndpoint: sessionEndpoint)..initialize();
+    _watchSync = WatchSyncService(runtime, _sessionStore, sessionEndpoint: sessionEndpoint)
+      ..initialize();
     _authSubscription = runtime.auth.changes.listen((_) {
       unawaited(refreshAccount());
     });
@@ -169,7 +170,15 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
   });
 
   final SecureSessionCredentialStore _sessionStore;
-  late final WatchSyncService watchSync;
+  WatchSyncService? _watchSync;
+
+  /// The watch-sync facade, built on first use. The boot warm-up may run after
+  /// the first frame, so a page must not observe a late-initialized field; this
+  /// getter falls back to building the runtime itself.
+  WatchSyncService get watchSync {
+    _runtime;
+    return _watchSync!;
+  }
 
   StreamSubscription<AuthSnapshot>? _authSubscription;
   StreamSubscription<CampusCard?>? _cardSubscription;
@@ -316,7 +325,7 @@ final class CampusCardService extends ChangeNotifier implements EcardSyncStore {
     // to unwind in that case.
     final runtime = _runtimeInstance;
     if (runtime != null) {
-      watchSync.dispose();
+      _watchSync?.dispose();
       unawaited(runtime.dispose());
     }
     unawaited(_authSubscription?.cancel());
