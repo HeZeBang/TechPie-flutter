@@ -10,12 +10,15 @@ import '../services/service_provider.dart';
 import '../theme/theme.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_checkbox.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
+import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 
 class GradesPage extends StatelessWidget {
@@ -29,7 +32,22 @@ class GradesPage extends StatelessWidget {
     if (grades == null) {
       return Scaffold(
         backgroundColor: context.tpColors.canvas,
-        appBar: const BlurredAppBar(title: Text('成绩与 GPA')),
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: '成绩与 GPA',
+            leadingItems: const [
+              IosNativeNavigationBarItem(
+                id: 'back',
+                title: '返回',
+                sfSymbol: 'chevron.left',
+                accessibilityLabel: '返回',
+                placementGroup: 'leading-main',
+              ),
+            ],
+            onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
+          ),
+          material: () => const BlurredAppBar(title: Text('成绩与 GPA')),
+        ),
         body: const CampusPrerequisiteView(
           icon: TpIcons.trophy,
           title: '成绩与 GPA',
@@ -185,35 +203,81 @@ class _GradesViewState extends State<_GradesView> {
 
     return Scaffold(
       backgroundColor: colors.canvas,
-      appBar: BlurredAppBar(
-        title: const Text('成绩与 GPA'),
-        actions: [
-          if (!english && service.ready)
-            IconButton(
-              tooltip: _showSearch ? '收起搜索' : '搜索课程',
-              icon: Icon(_showSearch ? TpIcons.close : TpIcons.search),
-              onPressed: () => setState(() {
-                _showSearch = !_showSearch;
-                if (!_showSearch) {
-                  _searchCtrl.clear();
-                  _query = '';
-                }
-              }),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '成绩与 GPA',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
             ),
-          PageRefreshButton(
-            onRefresh: () => refresh(clearTrial: false),
-            enabled: service.ready,
-            refreshing: busy,
-          ),
-          if (!isDesktop())
-            IconButton(
-              tooltip: '刷新',
-              onPressed: busy || !service.ready
-                  ? null
-                  : () => refresh(clearTrial: false),
-              icon: const Icon(TpIcons.refresh),
+          ],
+          trailingItems: [
+            if (!english && service.ready)
+              IosNativeNavigationBarItem(
+                id: 'search',
+                sfSymbol: _showSearch ? 'xmark' : 'magnifyingglass',
+                accessibilityLabel: _showSearch ? '收起搜索' : '搜索课程',
+                placementGroup: 'trailing-main',
+              ),
+            IosNativeNavigationBarItem(
+              id: 'refresh',
+              sfSymbol: 'arrow.clockwise',
+              accessibilityLabel: '刷新',
+              enabled: !busy && service.ready,
+              placementGroup: 'trailing-main',
             ),
-        ],
+          ],
+          onItemPressed: (id) {
+            switch (id) {
+              case 'back':
+                unawaited(maybePopAdaptivePage<void>(context));
+              case 'search':
+                setState(() {
+                  _showSearch = !_showSearch;
+                  if (!_showSearch) {
+                    _searchCtrl.clear();
+                    _query = '';
+                  }
+                });
+              case 'refresh':
+                unawaited(refresh(clearTrial: false));
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: const Text('成绩与 GPA'),
+          actions: [
+            if (!english && service.ready)
+              IconButton(
+                tooltip: _showSearch ? '收起搜索' : '搜索课程',
+                icon: Icon(_showSearch ? TpIcons.close : TpIcons.search),
+                onPressed: () => setState(() {
+                  _showSearch = !_showSearch;
+                  if (!_showSearch) {
+                    _searchCtrl.clear();
+                    _query = '';
+                  }
+                }),
+              ),
+            PageRefreshButton(
+              onRefresh: () => refresh(clearTrial: false),
+              enabled: service.ready,
+              refreshing: busy,
+            ),
+            if (!isDesktop())
+              IconButton(
+                tooltip: '刷新',
+                onPressed: busy || !service.ready
+                    ? null
+                    : () => refresh(clearTrial: false),
+                icon: const Icon(TpIcons.refresh),
+              ),
+          ],
+        ),
       ),
       body: !service.ready
           ? const CampusPrerequisiteView(

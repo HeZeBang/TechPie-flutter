@@ -38,6 +38,7 @@ import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_option_sheet.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_popup_menu_button.dart';
+import '../widgets/adaptive_progress_indicator.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_text_input_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
@@ -928,11 +929,7 @@ class _SchedulePageState extends State<SchedulePage> {
                 tooltip: _exportingCalendar ? '正在导出课表' : '导出课表',
                 onPressed: _exportingCalendar ? null : _startExportCalendar,
                 icon: _exportingCalendar
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
+                    ? const AdaptiveActivityIndicator(size: 20, strokeWidth: 2)
                     : const Icon(TpIcons.download, size: TpTokens.iconM),
               ),
             ],
@@ -1428,11 +1425,7 @@ class _SchedulePageState extends State<SchedulePage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (state == EmptyWeekState.loading)
-              const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
+              const AdaptiveActivityIndicator(size: 20, strokeWidth: 2)
             else
               Icon(TpIcons.schedule, size: TpTokens.iconL + 4, color: colors.textMuted),
             const SizedBox(height: TpTokens.space3),
@@ -1555,11 +1548,7 @@ class _SchedulePageState extends State<SchedulePage> {
                 if (state == EmptyWeekState.loading) ...[
                   // The same ring, at the same size, as every other place in the
                   // app that is waiting on something.
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                  const AdaptiveActivityIndicator(size: 20, strokeWidth: 2),
                   const SizedBox(height: 16),
                 ],
                 Text(
@@ -2013,10 +2002,9 @@ class _SchedulePageState extends State<SchedulePage> {
                   const Divider(height: 1),
                   DesktopMenuRow(
                     leading: _exportingCalendar
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                        ? const AdaptiveActivityIndicator(
+                            size: 18,
+                            strokeWidth: 2,
                           )
                         : const Icon(TpIcons.download, size: 18),
                     title: Text('导出课表', style: theme.textTheme.bodyMedium),

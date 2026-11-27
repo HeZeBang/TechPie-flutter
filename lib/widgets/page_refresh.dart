@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/tp_icons.dart';
 import '../utils/platform.dart';
 import 'adaptive_feedback.dart';
+import 'adaptive_progress_indicator.dart';
 
 /// A mouse-accessible refresh action for native desktop pages.
 ///
@@ -53,12 +54,10 @@ class _PageRefreshButtonState extends State<PageRefreshButton> {
       tooltip: busy ? '正在刷新' : '刷新',
       onPressed: widget.enabled && !busy ? _refresh : null,
       icon: busy
-          ? const SizedBox.square(
-              dimension: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                semanticsLabel: '正在刷新',
-              ),
+          ? const AdaptiveActivityIndicator(
+              size: 20,
+              strokeWidth: 2,
+              semanticLabel: '正在刷新',
             )
           : const Icon(TpIcons.refresh),
     );

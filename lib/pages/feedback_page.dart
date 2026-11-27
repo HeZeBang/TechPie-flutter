@@ -13,6 +13,7 @@ import '../widgets/adaptive_checkbox.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_progress_indicator.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
@@ -308,7 +309,7 @@ class _FeedbackPageState extends State<FeedbackPage> {
                                             const Positioned.fill(
                                               child: Center(
                                                 child:
-                                                    CircularProgressIndicator(),
+                                                    AdaptiveActivityIndicator(),
                                               ),
                                             ),
                                           if (_images[i].failed)

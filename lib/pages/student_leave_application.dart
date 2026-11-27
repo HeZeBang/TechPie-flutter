@@ -4,6 +4,7 @@ import '../models/student_leave.dart';
 import '../services/campus/campus_errors.dart';
 import '../services/student_leave_service.dart';
 import '../theme/theme.dart';
+import '../widgets/adaptive_date_picker.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/design_system/design_system.dart';
 import 'student_leave_editor.dart';
@@ -56,12 +57,12 @@ class _StudentLeaveApplicationState extends State<StudentLeaveApplication> {
       today.year + 2,
       if (dates != null) dates!.end.year + 1,
     ].reduce((a, b) => a > b ? a : b);
-    final selected = await showDateRangePicker(
+    final selected = await showAdaptiveDateRangePicker(
       context: context,
       initialDateRange: dates,
       firstDate: currentKind.earliestStart(today),
       lastDate: DateTime(maxYear, 12, 31),
-      helpText: '选择请假日期',
+      title: '选择请假日期',
     );
     if (!mounted || selected == null || widget.service.revision != revision) return;
     setState(() {

@@ -29,6 +29,7 @@ import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_progress_indicator.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
@@ -507,12 +508,9 @@ class _SettingsBodyState extends State<_SettingsBody> {
                                     : '点击检查 $updateSourceLabel 最新版本'),
                             value: _appVersion.isEmpty ? null : 'v$_appVersion',
                             trailing: _checkingUpdate
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
+                                ? const AdaptiveActivityIndicator(
+                                    size: 18,
+                                    strokeWidth: 2,
                                   )
                                 : null,
                             showChevron: !_checkingUpdate,

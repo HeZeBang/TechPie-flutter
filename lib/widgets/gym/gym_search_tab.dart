@@ -7,6 +7,7 @@ import '../../services/service_provider.dart';
 import '../../theme/theme.dart';
 import '../adaptive_button.dart';
 import '../adaptive_date_picker.dart';
+import '../adaptive_progress_indicator.dart';
 import '../app_shell/app_shell_metrics.dart';
 import '../design_system/design_system.dart';
 import 'gym_shared.dart';
@@ -361,7 +362,7 @@ class _GymSearchTabState extends State<GymSearchTab>
               if (_loading)
                 const TpCard(
                   padding: EdgeInsets.all(TpTokens.space5),
-                  child: Center(child: CircularProgressIndicator()),
+                  child: Center(child: AdaptiveActivityIndicator()),
                 ),
               if (groupedResults.isNotEmpty)
                 TpCard(

@@ -72,6 +72,10 @@ final _bareCardPattern = RegExp(r'(?<![A-Za-z0-9_])Card\s*\(');
 final _bareAppBarPattern = RegExp(r'(?<![A-Za-z0-9_])AppBar\s*\(');
 final _materialIconsPattern = RegExp(r'(?<![A-Za-z0-9_])Icons\.[A-Za-z0-9_]+');
 final _rawSnackBarPattern = RegExp(r'\bshowSnackBar\s*\(');
+final _rawSwitchPattern = RegExp(r'\b(Switch|SwitchListTile)\s*\(|\bSwitch\.adaptive\s*\(');
+final _rawSegmentedButtonPattern = RegExp(r'\bSegmentedButton\s*(?:<|\()');
+final _rawDropdownPattern = RegExp(r'\bDropdownButton(?:FormField)?\s*(?:<|\()');
+final _rawDatePickerPattern = RegExp(r'\bshowDate(?:Range)?Picker\s*\(');
 
 Set<DesignSystemRule> findMatchedLegacyRules(String source) {
   final matched = <DesignSystemRule>{};
@@ -122,6 +126,26 @@ List<String> findDesignSystemViolations(
     if (_magicBorderRadiusPattern.hasMatch(line)) {
       violations.add(
         'L$lineNumber: magic BorderRadius.circular(...) — use TpTokens.radius* instead',
+      );
+    }
+    if (_rawSwitchPattern.hasMatch(line)) {
+      violations.add(
+        'L$lineNumber: raw Switch / SwitchListTile — use AdaptiveSwitch / AdaptiveSwitchRow instead',
+      );
+    }
+    if (_rawSegmentedButtonPattern.hasMatch(line)) {
+      violations.add(
+        'L$lineNumber: raw SegmentedButton — use AdaptiveSegmentedControl instead',
+      );
+    }
+    if (_rawDropdownPattern.hasMatch(line)) {
+      violations.add(
+        'L$lineNumber: raw DropdownButton — use AdaptiveSelect instead',
+      );
+    }
+    if (_rawDatePickerPattern.hasMatch(line)) {
+      violations.add(
+        'L$lineNumber: raw showDatePicker / showDateRangePicker — use showAdaptiveDate*Picker instead',
       );
     }
     if (!allowedLegacyRules.contains(DesignSystemRule.bareCard) &&
@@ -208,7 +232,7 @@ void main() {
     }
   });
 
-  test('guard detects all eight forbidden style drift patterns', () {
+  test('guard detects all twelve forbidden style and control drift patterns', () {
     const badSnippet = '''
 Widget build(BuildContext context) {
   final c = const Color(0xFF123456);
@@ -224,13 +248,17 @@ Widget build(BuildContext context) {
           ),
         ),
         Card(child: Text('bare')),
+        Switch(value: true, onChanged: (_) {}),
+        SegmentedButton<int>(segments: const [], selected: const {}, onSelectionChanged: (_) {}),
+        DropdownButton<String>(items: const [], onChanged: (_) {}),
+        ElevatedButton(onPressed: () => showDatePicker(context: context, firstDate: DateTime(2020), lastDate: DateTime(2030)), child: const Text('pick')),
       ],
     ),
   );
 }
 ''';
     final violations = findDesignSystemViolations(badSnippet);
-    expect(violations, hasLength(8));
+    expect(violations, hasLength(12));
 
     const cleanSnippet = '''
 Widget build(BuildContext context) {

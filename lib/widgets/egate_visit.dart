@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../pages/third_party_accounts_page.dart';
@@ -5,9 +7,11 @@ import '../services/campus/campus_errors.dart';
 import '../services/campus/emap_client.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/uni_auth_login.dart';
 import 'adaptive_page_navigation.dart';
 
@@ -47,7 +51,22 @@ class EgateVisit extends StatelessWidget {
         final signedIn = services.authService.isLoggedIn;
         return Scaffold(
           backgroundColor: context.tpColors.canvas,
-          appBar: BlurredAppBar(title: Text(title)),
+          appBar: AdaptiveNavigationScaffold.adaptiveBar(
+            ios: () => IosNativeNavigationBar(
+              title: title,
+              leadingItems: const [
+                IosNativeNavigationBarItem(
+                  id: 'back',
+                  title: '返回',
+                  sfSymbol: 'chevron.left',
+                  accessibilityLabel: '返回',
+                  placementGroup: 'leading-main',
+                ),
+              ],
+              onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
+            ),
+            material: () => BlurredAppBar(title: Text(title)),
+          ),
           body: Center(
             child: Padding(
               padding: const EdgeInsets.all(TpTokens.pageHorizontalPadding),

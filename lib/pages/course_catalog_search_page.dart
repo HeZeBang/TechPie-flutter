@@ -10,11 +10,14 @@ import '../services/service_provider.dart';
 import '../theme/theme.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_progress_indicator.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 class CourseCatalogSearchPage extends StatelessWidget {
   const CourseCatalogSearchPage({super.key, this.service});
@@ -29,7 +32,22 @@ class CourseCatalogSearchPage extends StatelessWidget {
     if (catalog == null) {
       return Scaffold(
         backgroundColor: context.tpColors.canvas,
-        appBar: const BlurredAppBar(title: Text('本科课程目录')),
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: '本科课程目录',
+            leadingItems: const [
+              IosNativeNavigationBarItem(
+                id: 'back',
+                title: '返回',
+                sfSymbol: 'chevron.left',
+                accessibilityLabel: '返回',
+                placementGroup: 'leading-main',
+              ),
+            ],
+            onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
+          ),
+          material: () => const BlurredAppBar(title: Text('本科课程目录')),
+        ),
         body: const CampusPrerequisiteView(
           icon: TpIcons.course,
           title: '本科课程目录',
@@ -273,7 +291,22 @@ class _SearchState extends State<_Search> {
 
     return Scaffold(
       backgroundColor: colors.canvas,
-      appBar: const BlurredAppBar(title: Text('本科课程目录')),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '本科课程目录',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
+            ),
+          ],
+          onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
+        ),
+        material: () => const BlurredAppBar(title: Text('本科课程目录')),
+      ),
       body: widget.catalog.owner == null
           ? const CampusPrerequisiteView(
               icon: TpIcons.course,
@@ -524,7 +557,7 @@ class _SearchState extends State<_Search> {
                       if (more && busy)
                         const Padding(
                           padding: EdgeInsets.all(TpTokens.space4),
-                          child: Center(child: CircularProgressIndicator()),
+                          child: Center(child: AdaptiveActivityIndicator()),
                         ),
                       if (more && !busy)
                         Padding(

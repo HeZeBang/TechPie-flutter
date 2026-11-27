@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,10 +6,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:techpie/utils/platform.dart';
 import 'package:techpie/widgets/adaptive_checkbox.dart';
 import 'package:techpie/widgets/adaptive_context_menu.dart';
+import 'package:techpie/widgets/adaptive_date_picker.dart';
+import 'package:techpie/widgets/adaptive_option_sheet.dart';
 import 'package:techpie/widgets/adaptive_popup_menu_button.dart';
+import 'package:techpie/widgets/adaptive_progress_indicator.dart';
 import 'package:techpie/widgets/adaptive_segmented_control.dart';
 import 'package:techpie/widgets/adaptive_slider.dart';
 import 'package:techpie/widgets/adaptive_switch.dart';
+import 'package:techpie/widgets/schedule_picker_sheet.dart';
 
 void main() {
   tearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -296,6 +301,242 @@ void main() {
       } finally {
         debugForceMacosNativeUiModals = false;
       }
+    },
+  );
+
+  testWidgets(
+    'showAdaptiveDatePicker uses platform-appropriate dialog or sheet',
+    variant: const TargetPlatformVariant({
+      TargetPlatform.macOS,
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    }),
+    (tester) async {
+      DateTime? picked;
+      final initial = DateTime(2026, 3, 10);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  picked = await showAdaptiveDatePicker(
+                    context: context,
+                    initialDate: initial,
+                    firstDate: DateTime(2026, 1, 1),
+                    lastDate: DateTime(2026, 12, 31),
+                  );
+                },
+                child: const Text('PickDate'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('PickDate'));
+      await tester.pumpAndSettle();
+
+      if (defaultTargetPlatform == TargetPlatform.macOS) {
+        expect(find.byType(Dialog), findsOneWidget);
+        expect(find.byType(CalendarDatePicker), findsOneWidget);
+        await tester.tap(find.text('确定'));
+      } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+        expect(find.byType(CupertinoDatePicker), findsOneWidget);
+        expect(find.byType(IosSheetHeader), findsOneWidget);
+        tester.widget<IosSheetHeader>(find.byType(IosSheetHeader)).onConfirm!();
+      } else {
+        expect(find.byType(DatePickerDialog), findsOneWidget);
+        await tester.tap(find.text('OK'));
+      }
+
+      await tester.pumpAndSettle();
+      expect(picked, initial);
+    },
+  );
+
+  testWidgets(
+    'showAdaptiveDateRangePicker uses macOS desktop CalendarDatePicker dialog',
+    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    (tester) async {
+      final mocks = installMacOsPlatformViewMocks(tester);
+      DateTimeRange? picked;
+      final initialRange = DateTimeRange(
+        start: DateTime(2026, 3, 10),
+        end: DateTime(2026, 3, 12),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  picked = await showAdaptiveDateRangePicker(
+                    context: context,
+                    initialDateRange: initialRange,
+                    firstDate: DateTime(2026, 1, 1),
+                    lastDate: DateTime(2026, 12, 31),
+                  );
+                },
+                child: const Text('PickRange'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('PickRange'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(find.byType(CalendarDatePicker), findsOneWidget);
+      expect(
+        tester.widget<AppKitView>(find.byType(AppKitView)).viewType,
+        'TechPieMacSegmentedControl',
+      );
+      await emitFromNative(
+        tester,
+        'TechPieMacSegmentedControl',
+        mocks['TechPieMacSegmentedControl']!.id,
+        'valueChanged',
+        {'index': 1},
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+      expect(picked, initialRange);
+    },
+  );
+
+  testWidgets(
+    'showAdaptiveDateRangePicker uses Cupertino picker sheet on iOS',
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+    (tester) async {
+      DateTimeRange? picked;
+      final initialRange = DateTimeRange(
+        start: DateTime(2026, 3, 10),
+        end: DateTime(2026, 3, 12),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  picked = await showAdaptiveDateRangePicker(
+                    context: context,
+                    initialDateRange: initialRange,
+                    firstDate: DateTime(2026, 1, 1),
+                    lastDate: DateTime(2026, 12, 31),
+                  );
+                },
+                child: const Text('PickRange'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('PickRange'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(CupertinoDatePicker), findsOneWidget);
+      expect(find.text('开始日期'), findsOneWidget);
+      await tester.tap(find.text('结束日期'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(IosSheetHeader), findsOneWidget);
+      tester.widget<IosSheetHeader>(find.byType(IosSheetHeader)).onConfirm!();
+      await tester.pumpAndSettle();
+      expect(picked, initialRange);
+    },
+  );
+
+  testWidgets(
+    'AdaptiveActivityIndicator uses CupertinoActivityIndicator on Apple and CircularProgressIndicator elsewhere',
+    variant: const TargetPlatformVariant({
+      TargetPlatform.macOS,
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    }),
+    (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: AdaptiveActivityIndicator(
+              size: 18,
+              semanticLabel: '加载中',
+            ),
+          ),
+        ),
+      );
+
+      if (defaultTargetPlatform == TargetPlatform.macOS ||
+          defaultTargetPlatform == TargetPlatform.iOS) {
+        expect(find.byType(CupertinoActivityIndicator), findsOneWidget);
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+      } else {
+        expect(find.byType(CircularProgressIndicator), findsOneWidget);
+        expect(find.byType(CupertinoActivityIndicator), findsNothing);
+      }
+    },
+  );
+
+  testWidgets(
+    'showAdaptiveOptionSheet adapts between iOS CupertinoActionSheet, macOS Dialog, and Material SimpleDialog',
+    variant: const TargetPlatformVariant({
+      TargetPlatform.macOS,
+      TargetPlatform.iOS,
+      TargetPlatform.android,
+    }),
+    (tester) async {
+      String? picked;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => TextButton(
+                onPressed: () async {
+                  picked = await showAdaptiveOptionSheet<String>(
+                    context: context,
+                    title: '选择操作',
+                    message: '仅作用于当前列表',
+                    selectedValue: 'b',
+                    options: const [
+                      AdaptiveOptionItem(value: 'a', label: '选项一'),
+                      AdaptiveOptionItem(value: 'b', label: '选项二'),
+                    ],
+                  );
+                },
+                child: const Text('OpenOptions'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('OpenOptions'));
+      await tester.pumpAndSettle();
+
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        expect(find.byType(CupertinoActionSheet), findsOneWidget);
+        expect(find.text('选项二 ✓'), findsOneWidget);
+        await tester.tap(find.text('选项一'));
+      } else if (defaultTargetPlatform == TargetPlatform.macOS) {
+        expect(find.byType(Dialog), findsOneWidget);
+        await tester.tap(find.text('选项一'));
+      } else {
+        expect(find.byType(SimpleDialog), findsOneWidget);
+        await tester.tap(find.text('选项一'));
+      }
+
+      await tester.pumpAndSettle();
+      expect(picked, 'a');
     },
   );
 }

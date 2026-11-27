@@ -18,6 +18,7 @@ import '../widgets/adaptive_switch.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
 import '../widgets/egate_visit.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 import 'generic_webview_page.dart';
 
@@ -290,17 +291,46 @@ class _CampusJobPanelsState extends State<CampusJobPanels>
       backgroundColor: colors.canvas,
       extendBodyBehindAppBar:
           AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
-      appBar: BlurredAppBar(
-        title: const Text('校园岗位'),
-        actions: [
-          PageRefreshButton(onRefresh: _refresh),
-          if (!isDesktop())
-            IconButton(
-              tooltip: '刷新',
-              icon: const Icon(TpIcons.refresh),
-              onPressed: () => unawaited(_refresh()),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '校园岗位',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
             ),
-        ],
+          ],
+          trailingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'refresh',
+              sfSymbol: 'arrow.clockwise',
+              accessibilityLabel: '刷新',
+              placementGroup: 'trailing-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') {
+              unawaited(maybePopAdaptivePage<void>(context));
+            } else if (id == 'refresh') {
+              unawaited(_refresh());
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: const Text('校园岗位'),
+          actions: [
+            PageRefreshButton(onRefresh: _refresh),
+            if (!isDesktop())
+              IconButton(
+                tooltip: '刷新',
+                icon: const Icon(TpIcons.refresh),
+                onPressed: () => unawaited(_refresh()),
+              ),
+          ],
+        ),
       ),
       body: PageRefreshIndicator(
         onRefresh: _refresh,

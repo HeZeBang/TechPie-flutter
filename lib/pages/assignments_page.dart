@@ -22,6 +22,7 @@ import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_popup_menu_button.dart';
+import '../widgets/adaptive_progress_indicator.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
@@ -1497,13 +1498,10 @@ class _PlatformErrorsBannerState extends State<_PlatformErrorsBanner> {
                       ),
                       IconButton(
                         icon: _retrying.contains(entry.key)
-                            ? SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: colors.dangerRed,
-                                ),
+                            ? AdaptiveActivityIndicator(
+                                size: 16,
+                                strokeWidth: 2,
+                                color: colors.dangerRed,
                               )
                             : const Icon(TpIcons.refresh, size: TpTokens.iconS),
                         onPressed: _retrying.contains(entry.key)

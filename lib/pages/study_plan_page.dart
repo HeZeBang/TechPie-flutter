@@ -11,12 +11,15 @@ import '../theme/theme.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
+import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_progress_indicator.dart';
 import '../widgets/adaptive_segmented_control.dart';
 import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 
 class StudyPlanPage extends StatefulWidget {
@@ -194,31 +197,68 @@ class _StudyPlanPageState extends State<StudyPlanPage> {
       backgroundColor: colors.canvas,
       extendBodyBehindAppBar:
           AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
-      appBar: BlurredAppBar(
-        title: const Text('培养计划'),
-        actions: [
-          PageRefreshButton(
-            onRefresh: () => _load(refresh: true),
-            enabled: ready,
-            refreshing: _busy,
-          ),
-          if (!isDesktop())
-            IconButton(
-              tooltip: '刷新',
-              icon: const Icon(TpIcons.refresh),
-              onPressed: _busy || !ready ? null : () => _load(refresh: true),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '培养计划',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
             ),
-          IconButton(
-            tooltip: '导出 PDF',
-            icon: _exporting
-                ? const SizedBox.square(
-                    dimension: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(TpIcons.document),
-            onPressed: _exporting || !ready ? null : _export,
-          ),
-        ],
+          ],
+          trailingItems: [
+            IosNativeNavigationBarItem(
+              id: 'refresh',
+              sfSymbol: 'arrow.clockwise',
+              accessibilityLabel: '刷新',
+              enabled: !_busy && ready,
+              placementGroup: 'trailing-main',
+            ),
+            IosNativeNavigationBarItem(
+              id: 'export',
+              sfSymbol: 'doc.text',
+              accessibilityLabel: '导出 PDF',
+              enabled: !_exporting && ready,
+              placementGroup: 'trailing-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            switch (id) {
+              case 'back':
+                unawaited(maybePopAdaptivePage<void>(context));
+              case 'refresh':
+                unawaited(_load(refresh: true));
+              case 'export':
+                unawaited(_export());
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: const Text('培养计划'),
+          actions: [
+            PageRefreshButton(
+              onRefresh: () => _load(refresh: true),
+              enabled: ready,
+              refreshing: _busy,
+            ),
+            if (!isDesktop())
+              IconButton(
+                tooltip: '刷新',
+                icon: const Icon(TpIcons.refresh),
+                onPressed: _busy || !ready ? null : () => _load(refresh: true),
+              ),
+            IconButton(
+              tooltip: '导出 PDF',
+              icon: _exporting
+                  ? const AdaptiveActivityIndicator(size: 18, strokeWidth: 2)
+                  : const Icon(TpIcons.document),
+              onPressed: _exporting || !ready ? null : _export,
+            ),
+          ],
+        ),
       ),
       body: !ready
           ? const CampusPrerequisiteView(

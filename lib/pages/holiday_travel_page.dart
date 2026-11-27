@@ -9,6 +9,7 @@ import '../services/holiday_travel_service.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_date_picker.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_segmented_control.dart';
 import '../widgets/adaptive_switch.dart';
@@ -205,12 +206,12 @@ class _RegistrationsState extends State<_Registrations> {
 
   Future<void> chooseDates() async {
     final now = DateTime.now();
-    final selected = await showDateRangePicker(
+    final selected = await showAdaptiveDateRangePicker(
       context: context,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 2, 12, 31),
       initialDateRange: dates,
-      helpText: '选择本次离校与预计返校日期',
+      title: '选择本次离校与预计返校日期',
     );
     if (!mounted || selected == null) return;
     if (!HolidayTravel.validDates(selected.start, selected.end)) {
@@ -351,12 +352,12 @@ class _RegistrationsState extends State<_Registrations> {
   Future<void> confirmReturn(HolidayTravel record) async {
     if (submitting || preparing || record['WID'].isEmpty) return;
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showAdaptiveDatePicker(
       context: context,
       initialDate: now,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 2, 12, 31),
-      helpText: '选择实际返校日期',
+      title: '选择实际返校日期',
     );
     if (picked == null || !mounted) return;
     final service = widget.service;

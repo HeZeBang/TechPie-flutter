@@ -406,23 +406,64 @@ class _HomeShortcutEditorPageState extends State<HomeShortcutEditorPage> {
       canPop: !_saving,
       child: Scaffold(
         backgroundColor: colors.canvas,
-        appBar: BlurredAppBar(
-          leading: IconButton(
-            tooltip: '取消',
-            icon: const Icon(TpIcons.close),
-            onPressed: _saving ? null : () => Navigator.of(context).pop(),
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: '编辑首页快捷',
+            leadingItems: [
+              IosNativeNavigationBarItem(
+                id: 'cancel',
+                title: '取消',
+                sfSymbol: 'xmark',
+                accessibilityLabel: '取消',
+                enabled: !_saving,
+                placementGroup: 'leading-main',
+              ),
+            ],
+            trailingItems: [
+              IosNativeNavigationBarItem(
+                id: 'reset',
+                title: '恢复默认',
+                enabled: !_saving,
+                placementGroup: 'trailing-main',
+              ),
+              IosNativeNavigationBarItem(
+                id: 'save',
+                title: '保存',
+                role: IosNativeNavigationBarItemRole.done,
+                enabled: !_saving,
+                placementGroup: 'trailing-main',
+              ),
+            ],
+            onItemPressed: (id) {
+              if (_saving) return;
+              switch (id) {
+                case 'cancel':
+                  Navigator.of(context).pop();
+                case 'reset':
+                  _resetDefaults();
+                case 'save':
+                  unawaited(_save());
+              }
+            },
           ),
-          title: const Text('编辑首页快捷'),
-          actions: [
-            TextButton(
-              onPressed: _saving ? null : _resetDefaults,
-              child: const Text('恢复默认'),
+          material: () => BlurredAppBar(
+            leading: IconButton(
+              tooltip: '取消',
+              icon: const Icon(TpIcons.close),
+              onPressed: _saving ? null : () => Navigator.of(context).pop(),
             ),
-            TextButton(
-              onPressed: _saving ? null : _save,
-              child: const Text('保存'),
-            ),
-          ],
+            title: const Text('编辑首页快捷'),
+            actions: [
+              TextButton(
+                onPressed: _saving ? null : _resetDefaults,
+                child: const Text('恢复默认'),
+              ),
+              TextButton(
+                onPressed: _saving ? null : _save,
+                child: const Text('保存'),
+              ),
+            ],
+          ),
         ),
         body: TpPageBody(
           child: ListView(

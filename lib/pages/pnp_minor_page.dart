@@ -19,6 +19,7 @@ import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 import 'generic_webview_page.dart';
 
@@ -35,7 +36,22 @@ class PnpMinorPage extends StatelessWidget {
     if (data == null) {
       return Scaffold(
         backgroundColor: context.tpColors.canvas,
-        appBar: const BlurredAppBar(title: Text('P/NP 与辅修')),
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: 'P/NP 与辅修',
+            leadingItems: const [
+              IosNativeNavigationBarItem(
+                id: 'back',
+                title: '返回',
+                sfSymbol: 'chevron.left',
+                accessibilityLabel: '返回',
+                placementGroup: 'leading-main',
+              ),
+            ],
+            onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
+          ),
+          material: () => const BlurredAppBar(title: Text('P/NP 与辅修')),
+        ),
         body: const CampusPrerequisiteView(
           icon: TpIcons.pnpMinor,
           title: 'P/NP 与辅修',
@@ -155,21 +171,51 @@ class _ApplicationsState extends State<_Applications> {
       backgroundColor: colors.canvas,
       extendBodyBehindAppBar:
           AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
-      appBar: BlurredAppBar(
-        title: const Text('P/NP 与辅修'),
-        actions: [
-          PageRefreshButton(
-            onRefresh: () => refresh(),
-            enabled: s.ready,
-            refreshing: busy,
-          ),
-          if (!isDesktop())
-            IconButton(
-              tooltip: '刷新',
-              icon: const Icon(TpIcons.refresh),
-              onPressed: busy || !s.ready ? null : () => refresh(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: 'P/NP 与辅修',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
             ),
-        ],
+          ],
+          trailingItems: [
+            IosNativeNavigationBarItem(
+              id: 'refresh',
+              sfSymbol: 'arrow.clockwise',
+              accessibilityLabel: '刷新',
+              enabled: !busy && s.ready,
+              placementGroup: 'trailing-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') {
+              unawaited(maybePopAdaptivePage<void>(context));
+            } else if (id == 'refresh') {
+              unawaited(refresh());
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: const Text('P/NP 与辅修'),
+          actions: [
+            PageRefreshButton(
+              onRefresh: () => refresh(),
+              enabled: s.ready,
+              refreshing: busy,
+            ),
+            if (!isDesktop())
+              IconButton(
+                tooltip: '刷新',
+                icon: const Icon(TpIcons.refresh),
+                onPressed: busy || !s.ready ? null : () => refresh(),
+              ),
+          ],
+        ),
       ),
       body: !s.ready
           ? const CampusPrerequisiteView(
