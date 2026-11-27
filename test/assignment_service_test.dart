@@ -125,6 +125,122 @@ void main() {
     );
   });
 
+  test('refresh imports submitted and pending Ecourse deadlines and preserves them on failure', () async {
+    var failRefresh = false;
+    var expireSession = true;
+    final pages = <String>[];
+    final ids = _EcourseIdsClient();
+    final client = MockClient((request) async {
+      expect(request.method, 'GET');
+      expect(request.followRedirects, isFalse);
+      expect(request.url.origin, 'https://ecourse.shanghaitech.edu.cn');
+      expect(request.headers['cookie'], 'session=ecourse-mock');
+      final page = request.url.queryParameters['page'];
+      final key = '${request.url.path}:$page';
+      pages.add(key);
+      if (expireSession) {
+        expireSession = false;
+        return http.Response('', 302);
+      }
+      if (failRefresh && key == '/api/courses/102/homework-activities:1') {
+        return http.Response('', 503);
+      }
+      final response = switch (key) {
+        '/api/my-courses:1' => {
+            'page': 1,
+            'pages': 2,
+            'courses': [
+              {'id': 101, 'name': '实验课'},
+            ],
+          },
+        '/api/my-courses:2' => {
+            'page': 2,
+            'pages': 2,
+            'courses': [
+              {'id': 102, 'name': 'Empty course'},
+            ],
+          },
+        '/api/courses/101/homework-activities:1' => {
+            'page': 1,
+            'pages': 2,
+            'homework_activities': [
+              {
+                'id': 201,
+                'title': '已交作业',
+                'end_time': '2026-12-03T15:59:00Z',
+                'deadline': '2026-12-03T15:59:00Z',
+                'submitted': true,
+                'submitted_status': '',
+              },
+            ],
+          },
+        '/api/courses/101/homework-activities:2' => {
+            'page': 2,
+            'pages': 2,
+            'homework_activities': [
+              {
+                'id': 202,
+                'title': '待交作业',
+                'end_time': null,
+                'deadline': '2026-12-04T15:59:00Z',
+                'submitted': false,
+                'submitted_status': '',
+                'is_closed': true,
+              },
+            ],
+          },
+        '/api/courses/102/homework-activities:1' => {
+            'end': 0,
+            'homework_activities': <Object?>[],
+            'page': 0,
+            'page_size': 20,
+            'pages': 0,
+            'start': 0,
+            'total': 0,
+          },
+        _ => throw StateError('Unexpected Ecourse request: $key'),
+      };
+      return http.Response.bytes(utf8.encode(jsonEncode(response)), 200);
+    });
+    final fixture = await _identityFixture(
+      (_, __) => http.Response('', 503),
+      account: FakeIdsClient.account('20240001'),
+      cached: [_assignmentJson(id: 'existing', platform: 'gradescope', due: DateTime.utc(2027))],
+      inner: client,
+      idsClient: ids,
+    );
+    final service = fixture.service;
+
+    await service.fetchAssignments();
+
+    expect(ids.ecourseMints, 2);
+    expect(pages, [
+      '/api/my-courses:1',
+      '/api/my-courses:1',
+      '/api/my-courses:2',
+      '/api/courses/101/homework-activities:1',
+      '/api/courses/101/homework-activities:2',
+      '/api/courses/102/homework-activities:1',
+    ]);
+    final assignments = service.visibleAssignments.where((item) => item.platform == 'ecourse').toList();
+    expect(assignments.map((item) => item.id), ['101:201', '101:202']);
+    expect(assignments.first.title, '已交作业');
+    expect(assignments.first.course, '实验课');
+    expect(assignments.first.due.toUtc(), DateTime.utc(2026, 12, 3, 15, 59));
+    expect(service.isCompleted(assignments.first), isTrue);
+    expect(assignments.last.due.toUtc(), DateTime.utc(2026, 12, 4, 15, 59));
+    expect(service.isCompleted(assignments.last), isFalse);
+    expect(service.platformErrors, isNot(contains('ecourse')));
+
+    failRefresh = true;
+    await service.fetchPlatform('ecourse');
+    expect(service.platformErrors, contains('ecourse'));
+    expect(service.visibleAssignments.map((item) => item.id), ['101:201', '101:202', 'existing']);
+
+    await fixture.thirdParty.unbind(ThirdPartyPlatform.ids);
+    expect(service.visibleAssignments.map((item) => item.id), ['existing']);
+  });
+
   for (final singlePlatform in [false, true]) {
     for (final expired in [false, true]) {
       test(
@@ -621,7 +737,7 @@ Map<String, dynamic> _assignmentJson({
     };
 
 class _AssignmentHttpClient extends LoggingHttpClient {
-  _AssignmentHttpClient(this._handler) : super(DebugLogger());
+  _AssignmentHttpClient(this._handler, {http.Client? inner}) : super(DebugLogger(), inner: inner);
 
   final FutureOr<http.Response> Function(Uri url, Map<String, dynamic> body)
       _handler;
@@ -638,6 +754,17 @@ class _AssignmentHttpClient extends LoggingHttpClient {
         ? jsonDecode(body) as Map<String, dynamic>
         : <String, dynamic>{};
     return _handler(url, decodedBody);
+  }
+}
+
+class _EcourseIdsClient extends FakeIdsClient {
+  int ecourseMints = 0;
+
+  @override
+  Future<String> mintCookie(String nodeId, Map<String, dynamic> root) async {
+    if (nodeId != 'ecourse') return super.mintCookie(nodeId, root);
+    ecourseMints++;
+    return 'session=ecourse-mock';
   }
 }
 
@@ -659,6 +786,8 @@ Future<
   FutureOr<http.Response> Function(Uri, Map<String, dynamic>) handler, {
   ThirdPartyAccount? account,
   List<Map<String, dynamic>>? cached,
+  http.Client? inner,
+  FakeIdsClient? idsClient,
 }) async {
   SharedPreferences.setMockInitialValues({});
   FlutterSecureStorage.setMockInitialValues({});
@@ -693,9 +822,9 @@ Future<
       ),
     ],
   );
-  final client = _AssignmentHttpClient(handler);
+  final client = _AssignmentHttpClient(handler, inner: inner);
   final auth = AuthService(storage, client, UniAuthService());
-  final thirdParty = ThirdPartyAuthService(storage, client);
+  final thirdParty = ThirdPartyAuthService(storage, client, idsClient: idsClient);
   await auth.loadSession();
   await thirdParty.initialize();
   final schedule = ScheduleService(storage, client, auth, thirdParty);

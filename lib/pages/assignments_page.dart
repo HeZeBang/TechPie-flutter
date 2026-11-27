@@ -1498,7 +1498,7 @@ class _PlatformErrorsBannerState extends State<_PlatformErrorsBanner> {
                       const SizedBox(width: TpTokens.space2),
                       Expanded(
                         child: Text(
-                          '${entry.key}: ${entry.value}',
+                          '${entry.key == 'ecourse' ? 'E 云课堂' : entry.key}: ${entry.value}',
                           style: TpTypography.itemMeta(colors).copyWith(
                             color: colors.dangerRed,
                             fontWeight: FontWeight.w500,
@@ -1520,7 +1520,7 @@ class _PlatformErrorsBannerState extends State<_PlatformErrorsBanner> {
                             ? null
                             : () => unawaited(_retryPlatform(entry.key)),
                         color: colors.dangerRed,
-                        tooltip: '重试 ${entry.key}',
+                        tooltip: '重试 ${entry.key == 'ecourse' ? 'E 云课堂' : entry.key}',
                         constraints: const BoxConstraints.tightFor(
                           width: 36,
                           height: 36,
@@ -1544,6 +1544,7 @@ String _formatPlatformLabel(String platform) {
     'gradescope' => 'Gradescope',
     'hydro' => 'Hydro',
     'elearning' => 'eLearning',
+    'ecourse' => 'E 云课堂',
     'egate' => 'eGate',
     'exam' || 'custom' || '' => '',
     final other => other[0].toUpperCase() + other.substring(1),

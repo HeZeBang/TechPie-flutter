@@ -15,6 +15,7 @@ import '../models/third_party_account.dart';
 import 'api_base_url.dart';
 import 'auth_service.dart';
 import 'campus/eams_schedule_parser.dart';
+import 'ecourse_client.dart';
 import 'http_client.dart';
 import 'schedule_service.dart';
 import 'session/session_tree.dart';
@@ -186,10 +187,10 @@ class AssignmentService extends ChangeNotifier {
     };
   }
 
-  static String _sourcePlatform(String platform) =>
-      (platform == 'blackboard' || platform == 'exam')
-          ? ThirdPartyPlatform.ids.id
-          : platform;
+  static String _sourcePlatform(String platform) => switch (platform) {
+        'blackboard' || 'exam' || EcourseClient.platform => ThirdPartyPlatform.ids.id,
+        _ => platform,
+      };
 
   AssignmentService(
     this._storage,
@@ -763,6 +764,11 @@ class AssignmentService extends ChangeNotifier {
         }),
       );
       futures.add(
+        _fetchEcourse(epoch).then((items) {
+          if (items != null) successfulResults[EcourseClient.platform] = items;
+        }),
+      );
+      futures.add(
         _fetchExamTable().then((result) {
           exams = result;
         }),
@@ -857,6 +863,10 @@ class AssignmentService extends ChangeNotifier {
       future = _fetchBlackboard().then((items) {
         if (items != null) successfulResults['blackboard'] = items;
       });
+    } else if (platformId == EcourseClient.platform && _tpAuth.hasIdsBinding) {
+      future = _fetchEcourse(epoch).then((items) {
+        if (items != null) successfulResults[platformId] = items;
+      });
     } else if (platformId == 'exam' && _tpAuth.hasIdsBinding) {
       future = _fetchExamTable().then((result) {
         exams = result;
@@ -905,6 +915,34 @@ class AssignmentService extends ChangeNotifier {
         unawaited(fetchAssignments());
       }
     }
+  }
+
+  Future<List<Assignment>?> _fetchEcourse(int epoch) async {
+    final tree = _tpAuth.sessionTree;
+    final client = EcourseClient(_http);
+    try {
+      final items = await tree.withCookie<List<Assignment>?>(
+        tree.ecourse,
+        (provider) async {
+          if (_disposed || epoch != _identityEpoch) {
+            return const CookieAction(null, expired: false);
+          }
+          try {
+            final assignments = await client.fetchAssignments(provider.cookies);
+            return CookieAction(assignments, expired: false);
+          } on EcourseSessionExpired {
+            return const CookieAction(null, expired: true);
+          }
+        },
+      );
+      if (items != null) return items;
+    } on Exception {
+      // A failed refresh leaves the cached E 云课堂 deadlines visible.
+    }
+    if (!_disposed && epoch == _identityEpoch) {
+      _platformErrors[EcourseClient.platform] = '同步失败，请检查网络或稍后重试';
+    }
+    return null;
   }
 
   Future<List<Assignment>?> _fetchBlackboard() async {

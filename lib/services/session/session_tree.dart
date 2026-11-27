@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../../models/third_party_account.dart';
+import '../ecourse_client.dart';
 import '../http_client.dart';
 import 'cookie_provider.dart';
 import 'session_node.dart';
@@ -117,6 +118,15 @@ class SessionTree extends ChangeNotifier {
         bodyRegex: RegExp(r'欢迎[，,]\s*(.+?)\s*&ndash;'),
       ),
     );
+    ecourse = SessionNode(
+      id: EcourseClient.platform,
+      persist: persist,
+      http: http,
+      baseUrl: baseUrl,
+      parent: ids,
+      localCookieMint: localCookieMint,
+      renewMode: RenewMode.parentCookie,
+    );
     egateApp = SessionNode(
       id: 'egateApp',
       persist: persist,
@@ -160,6 +170,7 @@ class SessionTree extends ChangeNotifier {
     ids.attachChild(oa);
     ids.attachChild(eams);
     ids.attachChild(elearning);
+    ids.attachChild(ecourse);
     ids.attachChild(egateApp);
 
     // Only top-level node notifications propagate up to the tree (facade →
@@ -188,6 +199,7 @@ class SessionTree extends ChangeNotifier {
   late final SessionNode hydro;
   late final SessionNode eams;
   late final SessionNode elearning;
+  late final SessionNode ecourse;
   late final SessionNode egateApp;
   late final SessionNode oa;
 
@@ -350,7 +362,7 @@ class SessionTree extends ChangeNotifier {
     for (final n in [ids, gradescope, hydro]) {
       n.removeListener(notifyListeners);
     }
-    for (final n in [ids, gradescope, hydro, eams, elearning, egateApp, oa]) {
+    for (final n in [ids, gradescope, hydro, eams, elearning, ecourse, egateApp, oa]) {
       n.dispose();
     }
     super.dispose();

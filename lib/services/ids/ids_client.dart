@@ -9,6 +9,7 @@ import 'package:pointycastle/export.dart';
 
 import '../../models/ids_passkey.dart';
 import '../debug_logger.dart';
+import '../ecourse_client.dart';
 import 'campus_http.dart';
 import 'software_passkey.dart';
 
@@ -390,7 +391,19 @@ class IdsClient {
   }
 
   Future<String> mintCookie(String nodeId, Map<String, dynamic> root) async {
-    final client = CampusHttp(_http, logger: _logger);
+    final isEcourse = nodeId == EcourseClient.platform;
+    final client = CampusHttp(
+      _http,
+      logger: _logger,
+      allowedOrigins: isEcourse
+          ? const {
+              SoftwarePasskey.origin,
+              EcourseClient.origin,
+              '${EcourseClient.origin}:8600',
+            }
+          : null,
+      httpsRedirectHost: isEcourse ? EcourseClient.host : null,
+    );
     await client.restore(
       (root['cookieJar'] as List?) ??
           [
@@ -402,6 +415,7 @@ class IdsClient {
     );
     final entry = switch (nodeId) {
       'eams' => 'https://eams.shanghaitech.edu.cn/eams/home.action',
+      EcourseClient.platform => '${EcourseClient.origin}/login',
       'elearning' =>
         '${SoftwarePasskey.origin}/authserver/login?service=${Uri.encodeQueryComponent('https://elearning.shanghaitech.edu.cn:8443/webapps/bb-BB-BBLEARN/index.jsp')}',
       'egateApp' => 'https://egate.shanghaitech.edu.cn/xsfw/sys/xshdapp/xshdApply/dqnxxqgrhz.do',
@@ -410,12 +424,27 @@ class IdsClient {
       _ => throw ArgumentError.value(nodeId),
     };
     final response = await client.request(Uri.parse(entry));
+    if (isEcourse && response.requestOptions.uri.origin == EcourseClient.origin) {
+      final probe = await client.request(
+        EcourseClient.coursesUri,
+        headers: const {'Accept': 'application/json'},
+        allowErrorResponse: true,
+        followRedirects: false,
+      );
+      final cookies = await client.cookieHeader(EcourseClient.coursesUri);
+      final contentType = probe.headers.value('content-type') ?? '';
+      if (cookies.isEmpty || probe.statusCode != 200 || !contentType.startsWith('application/json')) {
+        throw const IdsException('未能建立 E 云课堂会话');
+      }
+      return cookies;
+    }
     final html = CampusHttp.text(response);
     if (response.requestOptions.uri.host == 'ids.shanghaitech.edu.cn' ||
         parse(html).querySelector('[name="execution"]') != null ||
         html.contains('统一身份认证')) {
       throw const IdsException('IDS 登录态已失效', credentialRejected: true);
     }
+    if (isEcourse) throw const IdsException('未能建立 E 云课堂会话');
     if (nodeId == 'elearning') {
       final fields = <String, String>{};
       for (final input in parse(html).querySelectorAll('input[name]')) {
