@@ -48,8 +48,8 @@ abstract final class DesktopSidebarTokens {
   static const double headerTopPadding = 10;
   static const double headerBottomPadding = 10;
 
-  static const double brandHeight = 38;
-  static const double brandIconSize = 22;
+  static const double brandHeight = 40;
+  static const double brandIconSize = 24;
   static const double brandTextGap = 8;
 
   static const double toggleButtonSize = 32;

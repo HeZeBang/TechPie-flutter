@@ -229,6 +229,12 @@ flutter:
       fonts:
         - asset: assets/fonts/rmedium.ttf
           weight: 500
+    # Plus Jakarta Sans ExtraBold (SIL OFL 1.1, subset to ASCII + middot)
+    # for grounded, steady TechPie wordmark rendering across all platforms.
+    - family: TechPieBrand
+      fonts:
+        - asset: assets/fonts/PlusJakartaSans-ExtraBold-Brand.ttf
+          weight: 800
 
   # To add assets to your application, add an assets section, like this:
   # assets:

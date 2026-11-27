@@ -68,7 +68,7 @@ class DesktopSidebar extends StatelessWidget {
 
     final sidebarBg = colors.isAmoled
         ? const Color(0xFF0A0A0A)
-        : (colors.isDark ? const Color(0xFF141416) : colors.surface);
+        : (colors.isDark ? const Color(0xFF141416) : const Color(0xFFF7F7F9));
 
     return ColoredBox(
       color: sidebarBg,
@@ -494,7 +494,7 @@ class _SidebarBrandTile extends StatelessWidget {
                 ),
                 if (canShowLabel) ...[
                   const SizedBox(width: DesktopSidebarTokens.brandTextGap),
-                  const Expanded(child: TpBrandWordmark(fontSize: 16.5)),
+                  const Expanded(child: TpBrandWordmark(fontSize: 17.5)),
                   const SizedBox(width: TpTokens.space2),
                 ],
               ],
@@ -561,7 +561,7 @@ class _SidebarCommandTrigger extends StatelessWidget {
           key: const ValueKey('desktop.command-palette-trigger'),
           color: colors.isDark
               ? Colors.white.withValues(alpha: 0.06)
-              : colors.surfaceSubtle,
+              : colors.textPrimary.withValues(alpha: 0.055),
           shape: RoundedRectangleBorder(borderRadius: radius),
           clipBehavior: Clip.antiAlias,
           child: InkWell(

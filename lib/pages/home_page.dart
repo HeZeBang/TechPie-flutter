@@ -690,13 +690,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ? Row(
               key: const ValueKey('home.brand-bar'),
               children: [
-                const TpBrandMark(size: 14),
+                const TpBrandMark(size: 15),
                 const SizedBox(width: 5),
                 Text(
                   'TechPie',
                   style: TpTypography.pageSubtitle(colors).copyWith(
-                    color: colors.brandInk,
-                    fontWeight: FontWeight.w600,
+                    fontFamily: TpBrandWordmark.brandFontFamily,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.35,
+                    color: colors.textPrimary,
                   ),
                 ),
                 Flexible(
@@ -742,13 +745,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ? _desktopLayout.campusCardStyle
         : _mobileLayout.campusCardStyle;
 
+    final showMobileGlanceRow = !isBento &&
+        !_isEditing &&
+        auth.isLoggedIn &&
+        _todayCourses.isEmpty &&
+        _mobileLayout.order.contains(HomeWidgetId.deadlines);
+
     Widget buildWidgetCard(HomeWidgetId id) => switch (id) {
           HomeWidgetId.campusCard => _buildCampusCardStrip(
               campusCard,
               storage,
               expandedCard: effectiveCardStyle == HomeCampusCardStyle.full,
             ),
-          HomeWidgetId.todayCourses => _buildTodayClasses(colors, auth.isLoggedIn),
+          HomeWidgetId.todayCourses => showMobileGlanceRow
+              ? _buildMobileGlanceRow(colors)
+              : _buildTodayClasses(colors, auth.isLoggedIn),
           HomeWidgetId.deadlines => _buildPendingAssignments(colors),
           HomeWidgetId.quickActions => _buildQuickActions(),
           _ => buildCampusServiceHomeWidget(
@@ -1150,13 +1161,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildPendingAssignments(TpColors colors) {
-    final now = _now;
-    DateTime activeDueOf(Assignment a) =>
-        (a.effectiveLateDue != null && a.due.isBefore(now))
-            ? a.effectiveLateDue!
-            : a.due;
-    final pending = _assignments.visibleAssignments
+  static DateTime _activeDueOf(Assignment a, DateTime now) =>
+      (a.effectiveLateDue != null && a.due.isBefore(now))
+          ? a.effectiveLateDue!
+          : a.due;
+
+  List<Assignment> _activePendingAssignments(DateTime now) {
+    return _assignments.visibleAssignments
         .where(
           (a) =>
               !_assignments.isCompleted(a) &&
@@ -1164,7 +1175,114 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               (!a.canBeOverdue || !a.effectiveDue.isBefore(now)),
         )
         .toList()
-      ..sort((a, b) => activeDueOf(a).compareTo(activeDueOf(b)));
+      ..sort((a, b) => _activeDueOf(a, now).compareTo(_activeDueOf(b, now)));
+  }
+
+  Widget _buildMobileGlanceRow(TpColors colors) {
+    final now = _now;
+    final pending = _activePendingAssignments(now);
+    final urgentCount = pending.where((a) {
+      final isExamInProgress = a is ExamAssignment && a.isInProgressAt(now);
+      final inLateWindow = a.effectiveLateDue != null && a.due.isBefore(now);
+      final due = inLateWindow ? a.effectiveLateDue! : a.due;
+      return isExamInProgress ||
+          inLateWindow ||
+          due.difference(now).inHours < 24;
+    }).length;
+
+    final String statusText;
+    if (urgentCount > 0) {
+      statusText = '$urgentCount 项 <24h';
+    } else if (pending.isEmpty) {
+      statusText = '全部完成';
+    } else {
+      final nearest = _dueLabel(_activeDueOf(pending.first, now), now)
+          .replaceFirst('剩余 ', '');
+      statusText = '最近 $nearest';
+    }
+
+    final metaStyle = TpTypography.cardMeta(colors);
+    final unitStyle = metaStyle.copyWith(color: colors.textSecondary);
+    final countStyle = TpTypography.numericDisplay(colors).copyWith(fontSize: 24);
+
+    final todayTile = TpCard(
+      onTap: () => appShellPendingTab.value = 1,
+      padding: const EdgeInsets.all(TpTokens.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('今日课程', style: metaStyle, maxLines: 1),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('0', style: countStyle),
+              const SizedBox(width: 3),
+              Text('节', style: unitStyle),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '休息日',
+            style: metaStyle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+
+    final deadlinesTile = TpCard(
+      key: const ValueKey('home.deadlines-glance'),
+      onTap: () => appShellPendingDeadlines.value = true,
+      padding: const EdgeInsets.all(TpTokens.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Deadlines', style: metaStyle, maxLines: 1),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('${pending.length}', style: countStyle),
+              const SizedBox(width: 3),
+              Text('项', style: unitStyle),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            statusText,
+            style: metaStyle.copyWith(
+              color: urgentCount > 0 ? colors.dangerRed : colors.textMuted,
+              fontWeight: urgentCount > 0 ? FontWeight.w600 : FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+
+    return IntrinsicHeight(
+      key: const ValueKey('home.today-courses'),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: todayTile),
+          const SizedBox(width: TpTokens.sectionGap),
+          Expanded(child: deadlinesTile),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingAssignments(TpColors colors) {
+    final now = _now;
+    final pending = _activePendingAssignments(now);
 
     final showCount = pending.length.clamp(0, 4);
     final overflow = pending.length - showCount;
@@ -1369,7 +1487,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       );
     }
     return (
-      barColor: colors.textPrimary.withValues(alpha: colors.isDark ? 0.24 : 0.16),
+      barColor: colors.textPrimary.withValues(alpha: colors.isDark ? 0.30 : 0.28),
       trailingColor: colors.textMuted,
       highlightTrailing: false,
     );

@@ -171,6 +171,11 @@ void main() {
         );
         expect(wordmarkText.style?.color, lightTp.textPrimary);
         expect(wordmarkText.style?.color, isNot(TpTokens.iosBlueLight));
+        expect(
+          wordmarkText.style?.fontFamily,
+          TpBrandWordmark.brandFontFamily,
+        );
+        expect(wordmarkText.style?.fontWeight, FontWeight.w800);
 
         final lightDefaultSub = tester.widget<Text>(
           find.descendant(
@@ -223,6 +228,11 @@ void main() {
         );
         expect(darkWordmarkText.style?.color, darkTp.textPrimary);
         expect(darkWordmarkText.style?.color, isNot(TpTokens.iosBlueDark));
+        expect(
+          darkWordmarkText.style?.fontFamily,
+          TpBrandWordmark.brandFontFamily,
+        );
+        expect(darkWordmarkText.style?.fontWeight, FontWeight.w800);
 
         final darkDefaultSub = tester.widget<Text>(
           find.descendant(

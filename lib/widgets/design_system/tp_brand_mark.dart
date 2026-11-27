@@ -80,13 +80,15 @@ class TpBrandMark extends StatelessWidget {
   }
 }
 
-/// Clean monochrome TechPie wordmark.
+/// Heavy display-grade monochrome TechPie wordmark.
 class TpBrandWordmark extends StatelessWidget {
   const TpBrandWordmark({
     super.key,
     this.fontSize = 17,
     this.textAlign = TextAlign.start,
   });
+
+  static const String brandFontFamily = 'TechPieBrand';
 
   final double fontSize;
   final TextAlign textAlign;
@@ -100,10 +102,11 @@ class TpBrandWordmark extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       textAlign: textAlign,
       style: TpTypography.cardTitle(colors).copyWith(
+        fontFamily: brandFontFamily,
         fontSize: fontSize,
-        fontWeight: FontWeight.w700,
-        height: 1.1,
-        letterSpacing: fontSize >= 20 ? -0.5 : -0.35,
+        fontWeight: FontWeight.w800,
+        height: 1.05,
+        letterSpacing: fontSize >= 20 ? -0.65 : -0.45,
         color: colors.textPrimary,
       ),
     );

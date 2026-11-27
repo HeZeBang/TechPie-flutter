@@ -41,6 +41,8 @@ class TpCampusCardStrip extends StatelessWidget {
 
   static const Color _cardHeaderCrimson = Color(0xFF9D0A12);
   static const Color _cardHeaderSeam = Color(0xFF84070E);
+  static const Color _cardHeroLight = Color(0xFF9D0A12);
+  static const Color _cardHeroDark = Color(0xFF8A111D);
   static const Color _cardBodyCanvas = Color(0xFFFEF9F9);
   static const Color _cardBodyBlush = Color(0xFFFDEBEC);
   static const Color _cardBalanceInk = Color(0xFF7A1018);
@@ -336,139 +338,223 @@ class TpCampusCardStrip extends StatelessWidget {
   Widget _buildCompactStrip(BuildContext context) {
     final colors = context.tpColors;
     final canToggleBalance = configured && onToggleHideBalance != null;
+    final hasVisibleBalance = configured &&
+        !hideBalance &&
+        balanceText != null &&
+        balanceText!.isNotEmpty;
 
-    final String subtitle;
+    final Widget balanceWidget;
     if (!configured) {
-      subtitle = '绑定后可一键亮码与查看余额';
+      balanceWidget = Text(
+        '绑定后可一键亮码与查看余额',
+        style: TpTypography.itemTitle(colors).copyWith(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: Colors.white.withValues(alpha: 0.92),
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
     } else if (hideBalance) {
-      subtitle = '余额 ••••';
-    } else if (balanceText != null && balanceText!.isNotEmpty) {
-      subtitle = '余额 $balanceText';
+      balanceWidget = Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '余额 ',
+              style: TpTypography.cardMeta(colors).copyWith(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: Colors.white70,
+              ),
+            ),
+            TextSpan(
+              text: '••••',
+              style: TpTypography.numericDisplay(colors).copyWith(
+                fontSize: 21,
+                fontWeight: FontWeight.w700,
+                height: 1.1,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
+    } else if (hasVisibleBalance) {
+      balanceWidget = Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '余额 ',
+              style: TpTypography.cardMeta(colors).copyWith(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: Colors.white70,
+              ),
+            ),
+            TextSpan(
+              text: balanceText!,
+              style: TpTypography.numericDisplay(colors).copyWith(
+                fontSize: 23,
+                fontWeight: FontWeight.w700,
+                height: 1.1,
+                letterSpacing: -0.4,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
     } else {
-      subtitle = '点击亮码';
+      balanceWidget = Text(
+        '点击亮码',
+        style: TpTypography.itemTitle(colors).copyWith(
+          fontSize: 18,
+          fontWeight: FontWeight.w700,
+          height: 1.15,
+          color: Colors.white,
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      );
     }
 
     return TpPressScale(
       pressedScale: 0.98,
       child: TpCard(
         key: const ValueKey('home.campus-card-strip'),
+        color: colors.isDark ? _cardHeroDark : _cardHeroLight,
+        borderColor: colors.isDark
+            ? Colors.white.withValues(alpha: 0.10)
+            : Colors.transparent,
         onTap: onOpenPayCode,
         enablePressScale: false,
-        padding: const EdgeInsets.symmetric(
-          horizontal: TpTokens.cardPaddingHorizontal,
-          vertical: TpTokens.space1,
-        ),
-        child: Row(
+        child: Stack(
           children: [
-            // Mini entity campus-card thumbnail composed cleanly with zero
-            // white-corner bleed in dark mode.
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: TpTokens.space2),
-              child: Container(
-                key: const ValueKey('home.campus-card-mini-thumb'),
-                width: 50,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: _cardBodyCanvas,
-                  borderRadius: BorderRadius.circular(TpTokens.radiusXs),
-                  border: Border.all(
-                    color: colors.isDark ? colors.border : colors.divider,
-                    width: 0.5,
-                  ),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Expanded(
-                      flex: 32,
-                      child: ColoredBox(color: _cardHeaderCrimson),
-                    ),
-                    Expanded(
-                      flex: 68,
-                      child: ColoredBox(
-                        color: _cardBodyCanvas,
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Opacity(
+                    opacity: 0.14,
+                    child: ColorFiltered(
+                      colorFilter: const ColorFilter.mode(
+                        Colors.white,
+                        BlendMode.srcIn,
+                      ),
+                      child: SizedBox(
+                        width: double.infinity,
                         child: Image.asset(
                           cardBottomAsset,
-                          fit: BoxFit.contain,
+                          fit: BoxFit.fitWidth,
                           alignment: Alignment.bottomCenter,
                           filterQuality: FilterQuality.medium,
                           excludeFromSemantics: true,
-                          errorBuilder: (_, __, ___) => const ColoredBox(
-                            color: _cardBodyBlush,
-                          ),
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
                         ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(width: TpTokens.space3),
-            Expanded(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Flexible(
-                    child: Padding(
-                      padding: EdgeInsets.only(
-                        top: TpTokens.space2,
-                        bottom: canToggleBalance ? 10 : TpTokens.space2,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '校园卡',
-                            style: TpTypography.itemTitle(colors),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            subtitle,
-                            style: TpTypography.itemMeta(colors).copyWith(
-                              color: configured && !hideBalance
-                                  ? colors.textSecondary
-                                  : colors.textMuted,
-                              fontWeight: configured && !hideBalance
-                                  ? FontWeight.w500
-                                  : FontWeight.w400,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
-                  if (canToggleBalance)
-                    _BalanceEyeButton(
-                      hidden: hideBalance,
-                      color: colors.textMuted,
-                      iconSize: 14,
-                      hitSize: 38,
-                      onTap: onToggleHideBalance!,
-                    ),
-                ],
+                ),
               ),
             ),
-            const SizedBox(width: TpTokens.space2),
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: TpTokens.space2),
-              child: _PayIndicator(
-                configured: configured,
-                foregroundColor:
-                    configured ? colors.brandInk : colors.textSecondary,
-                backgroundColor:
-                    configured ? colors.brandSoft : colors.surfaceSubtle,
-                iconSize: TpTokens.iconXs,
-                fontSize: 11.5,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 5,
-                ),
+              padding: const EdgeInsets.fromLTRB(
+                TpTokens.cardPaddingHorizontal,
+                13,
+                TpTokens.cardPaddingHorizontal,
+                14,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        key: const ValueKey('home.campus-card-mini-thumb'),
+                        width: 18,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(3),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.65),
+                            width: 1.0,
+                          ),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: Align(
+                          alignment: Alignment.topCenter,
+                          child: Container(
+                            height: 4,
+                            color: Colors.white.withValues(alpha: 0.45),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Text(
+                        '校园卡',
+                        style: TpTypography.cardMeta(colors).copyWith(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.92),
+                        ),
+                        maxLines: 1,
+                      ),
+                      Flexible(
+                        child: Text(
+                          ' · 上海科技大学',
+                          style: TpTypography.cardMeta(colors).copyWith(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                            color: Colors.white.withValues(alpha: 0.62),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Flexible(child: balanceWidget),
+                            if (canToggleBalance) ...[
+                              const SizedBox(width: 4),
+                              _BalanceEyeButton(
+                                hidden: hideBalance,
+                                color: Colors.white70,
+                                iconSize: 15,
+                                hitSize: 38,
+                                onTap: onToggleHideBalance!,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: TpTokens.space2),
+                      _PayIndicator(
+                        configured: configured,
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.white.withValues(alpha: 0.18),
+                        iconSize: TpTokens.iconXs,
+                        fontSize: 12,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ],
