@@ -7,6 +7,8 @@ import '../services/service_provider.dart';
 import '../services/student_leave_management.dart';
 import '../services/student_leave_service.dart';
 import '../theme/theme.dart';
+import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/design_system/design_system.dart';
 import 'emap_history_page.dart';
@@ -65,7 +67,6 @@ class _LeaveCardState extends State<_LeaveCard> {
     final service = widget.service;
     final record = widget.record;
     final revision = service.revision;
-    final messenger = ScaffoldMessenger.of(context);
     setState(() => busy = true);
     var acknowledged = false;
     try {
@@ -94,29 +95,31 @@ class _LeaveCardState extends State<_LeaveCard> {
           final period =
               [record['QJKSRQ'], record['QJJSRQ']].where((d) => d.isNotEmpty).toSet().join(' 至 ');
           final summary = [record.type, period].where((s) => s.isNotEmpty).join(' · ');
-          final confirmed = await showDialog<bool>(
+          final confirmed = await showAdaptiveAlertDialog<bool>(
             context: context,
-            builder: (dialog) => AlertDialog(
-              title: Text('$label？'),
-              content: Text('$summary\n${deleting ? '删除后无法恢复这条记录。' : '撤回后，申请会回到草稿，可编辑或删除。'}'),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(dialog, false), child: const Text('取消')),
-                FilledButton(
-                  style: deleting
-                      ? FilledButton.styleFrom(backgroundColor: Theme.of(dialog).colorScheme.error)
-                      : null,
-                  onPressed: () => Navigator.pop(dialog, true),
-                  child: Text(label),
-                ),
-              ],
-            ),
+            title: '$label？',
+            message:
+                '$summary\n${deleting ? '删除后无法恢复这条记录。' : '撤回后，申请会回到草稿，可编辑或删除。'}',
+            actions: [
+              const AdaptiveAlertAction<bool>(label: '取消', value: false),
+              AdaptiveAlertAction<bool>(
+                label: label,
+                value: true,
+                isDestructive: deleting,
+                isDefault: !deleting,
+              ),
+            ],
           );
           if (confirmed != true || !mounted || revision != service.revision) return;
           await service.changeLeaveState(record, action, revision);
           acknowledged = true;
           await service.refresh();
-          if (revision != service.revision || !messenger.mounted) return;
-          messenger.showSnackBar(SnackBar(content: Text(deleting ? '草稿已删除' : '申请已撤回')));
+          if (revision != service.revision || !mounted) return;
+          showAdaptiveFeedback(
+            context: context,
+            message: deleting ? '草稿已删除' : '申请已撤回',
+            style: AdaptiveFeedbackStyle.success,
+          );
       }
     } catch (e) {
       if (!mounted || revision != service.revision) return;
@@ -125,7 +128,11 @@ class _LeaveCardState extends State<_LeaveCard> {
           : e is CampusRequestException
               ? e.message
               : '操作结果待核对，请刷新历史记录';
-      messenger.showSnackBar(SnackBar(content: Text(message)));
+      showAdaptiveFeedback(
+        context: context,
+        message: message,
+        style: AdaptiveFeedbackStyle.error,
+      );
       load(true);
     } finally {
       if (mounted) setState(() => busy = false);
@@ -172,7 +179,7 @@ class _LeaveCardState extends State<_LeaveCard> {
                 if (allowed.contains(LeaveRecordAction.print))
                   OutlinedButton.icon(
                     onPressed: busy ? null : () => perform(LeaveRecordAction.print),
-                    icon: const Icon(Icons.print_outlined),
+                    icon: const Icon(TpIcons.print),
                     label: const Text('打印官方请假单'),
                   ),
               ],
@@ -198,51 +205,55 @@ class _LeaveCardState extends State<_LeaveCard> {
       child: TpCard(
         child: r.id.isEmpty
             ? ListTile(title: title, subtitle: subtitle)
-            : ExpansionTile(
-                title: title,
-                subtitle: subtitle,
-                onExpansionChanged: load,
-                children: [
-                  if (detail != null)
-                    FutureBuilder<StudentLeave>(
-                      future: detail,
-                      builder: (_, snapshot) {
-                        if (snapshot.hasError) {
-                          final error = snapshot.error;
-                          return ListTile(
-                            title:
-                                Text(error is CampusRequestException ? error.message : '读取请假详情失败'),
-                            trailing: TextButton(
-                              onPressed: () => setState(
-                                () => detail = widget.service.detail(r, widget.service.revision),
+            : Theme(
+                data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  title: title,
+                  subtitle: subtitle,
+                  onExpansionChanged: load,
+                  children: [
+                    if (detail != null)
+                      FutureBuilder<StudentLeave>(
+                        future: detail,
+                        builder: (_, snapshot) {
+                          if (snapshot.hasError) {
+                            final error = snapshot.error;
+                            return ListTile(
+                              title: Text(
+                                error is CampusRequestException ? error.message : '读取请假详情失败',
                               ),
-                              child: const Text('重试'),
-                            ),
+                              trailing: TextButton(
+                                onPressed: () => setState(
+                                  () => detail = widget.service.detail(r, widget.service.revision),
+                                ),
+                                child: const Text('重试'),
+                              ),
+                            );
+                          }
+                          final d = snapshot.data;
+                          if (d == null) return const LinearProgressIndicator();
+                          final rows = {
+                            '申请编号': d.id,
+                            '审批状态': d.status,
+                            '申请日期': d['SQRQ'],
+                            '请假性质': d['QJXZ_DISPLAY'],
+                            '请假事由': d['QJSY'],
+                            '申请说明': d['SQSM'],
+                            '请假去向': d['DZ_QJQX'],
+                            '详细地址': d['DZ_XXDZ'],
+                            '涉及课程': d['DZ_KCMC'],
+                          };
+                          return Column(
+                            children: [
+                              for (final e in rows.entries.where((e) => e.value.isNotEmpty))
+                                ListTile(dense: true, title: Text(e.key), subtitle: Text(e.value)),
+                            ],
                           );
-                        }
-                        final d = snapshot.data;
-                        if (d == null) return const LinearProgressIndicator();
-                        final rows = {
-                          '申请编号': d.id,
-                          '审批状态': d.status,
-                          '申请日期': d['SQRQ'],
-                          '请假性质': d['QJXZ_DISPLAY'],
-                          '请假事由': d['QJSY'],
-                          '申请说明': d['SQSM'],
-                          '请假去向': d['DZ_QJQX'],
-                          '详细地址': d['DZ_XXDZ'],
-                          '涉及课程': d['DZ_KCMC'],
-                        };
-                        return Column(
-                          children: [
-                            for (final e in rows.entries.where((e) => e.value.isNotEmpty))
-                              ListTile(dense: true, title: Text(e.key), subtitle: Text(e.value)),
-                          ],
-                        );
-                      },
-                    ),
-                  if (actions != null) management(),
-                ],
+                        },
+                      ),
+                    if (actions != null) management(),
+                  ],
+                ),
               ),
       ),
     );
@@ -279,79 +290,82 @@ class _SchoolApprovalsState extends State<_SchoolApprovals> {
 
   @override
   Widget build(BuildContext context) => TpCard(
-        child: ExpansionTile(
-          title: const Text('学校审批意见'),
-          onExpansionChanged: (open) {
-            if (open) {
-              reload();
-            } else {
-              setState(() {
-                history = null;
-                selected = null;
-                detail = null;
-              });
-            }
-          },
-          children: [
-            if (history != null)
-              FutureBuilder<List<LeaveApprovalRecord>>(
-                future: history,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const LinearProgressIndicator();
-                  }
-                  if (snapshot.hasError) return _readError(snapshot.error, reload);
-                  if (snapshot.requireData.isEmpty) return const ListTile(title: Text('暂无请假申请'));
-                  return Column(
-                    children: [
-                      for (final record in snapshot.requireData) ...[
-                        ListTile(
-                          title: Text(record.title),
-                          subtitle: record.period.isEmpty ? null : Text(record.period),
-                          selected: selected == record,
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => select(record),
-                        ),
-                        if (record == selected)
-                          FutureBuilder<LeaveApprovalDetail>(
-                            future: detail,
-                            builder: (_, result) {
-                              if (result.connectionState != ConnectionState.done) {
-                                return const LinearProgressIndicator();
-                              }
-                              if (result.hasError) {
-                                return _readError(result.error, () => select(record));
-                              }
-                              final item = result.requireData;
-                              return Column(
-                                children: [
-                                  if (item.status.isNotEmpty)
-                                    ListTile(
-                                      dense: true,
-                                      title: const Text('审批状态'),
-                                      subtitle: Text(item.status),
-                                    ),
-                                  if (item.reason.isNotEmpty)
-                                    ListTile(
-                                      dense: true,
-                                      title: const Text('请假事由'),
-                                      subtitle: Text(item.reason),
-                                    ),
-                                  ListTile(
-                                    dense: true,
-                                    title: const Text('审批意见'),
-                                    subtitle: Text(item.comment.isEmpty ? '暂无审批意见' : item.comment),
-                                  ),
-                                ],
-                              );
-                            },
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            title: const Text('学校审批意见'),
+            onExpansionChanged: (open) {
+              if (open) {
+                reload();
+              } else {
+                setState(() {
+                  history = null;
+                  selected = null;
+                  detail = null;
+                });
+              }
+            },
+            children: [
+              if (history != null)
+                FutureBuilder<List<LeaveApprovalRecord>>(
+                  future: history,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const LinearProgressIndicator();
+                    }
+                    if (snapshot.hasError) return _readError(snapshot.error, reload);
+                    if (snapshot.requireData.isEmpty) return const ListTile(title: Text('暂无请假申请'));
+                    return Column(
+                      children: [
+                        for (final record in snapshot.requireData) ...[
+                          ListTile(
+                            title: Text(record.title),
+                            subtitle: record.period.isEmpty ? null : Text(record.period),
+                            selected: selected == record,
+                            trailing: const Icon(TpIcons.chevronRight),
+                            onTap: () => select(record),
                           ),
+                          if (record == selected)
+                            FutureBuilder<LeaveApprovalDetail>(
+                              future: detail,
+                              builder: (_, result) {
+                                if (result.connectionState != ConnectionState.done) {
+                                  return const LinearProgressIndicator();
+                                }
+                                if (result.hasError) {
+                                  return _readError(result.error, () => select(record));
+                                }
+                                final item = result.requireData;
+                                return Column(
+                                  children: [
+                                    if (item.status.isNotEmpty)
+                                      ListTile(
+                                        dense: true,
+                                        title: const Text('审批状态'),
+                                        subtitle: Text(item.status),
+                                      ),
+                                    if (item.reason.isNotEmpty)
+                                      ListTile(
+                                        dense: true,
+                                        title: const Text('请假事由'),
+                                        subtitle: Text(item.reason),
+                                      ),
+                                    ListTile(
+                                      dense: true,
+                                      title: const Text('审批意见'),
+                                      subtitle: Text(item.comment.isEmpty ? '暂无审批意见' : item.comment),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
+                        ],
                       ],
-                    ],
-                  );
-                },
-              ),
-          ],
+                    );
+                  },
+                ),
+            ],
+          ),
         ),
       );
 

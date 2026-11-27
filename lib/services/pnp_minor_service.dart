@@ -135,7 +135,6 @@ class PnpMinorService extends ChangeNotifier {
     }
 
     final revokeIds = <AcademicApplicationRow, String>{};
-    if (tab == AcademicApplicationTab.pnp) _revokeIds.clear();
     final pending = <String, List<AcademicApplicationRow>>{};
     final pendingErrors = <String, String>{};
     Object? firstError;

@@ -7,38 +7,54 @@ import '../models/feature.dart';
 import '../services/campus/campus_errors.dart';
 import '../services/campus/emap_client.dart';
 import '../services/campus_job_service.dart';
-import '../theme/tp_tokens.dart';
+import '../theme/theme.dart';
+import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_segmented_control.dart';
+import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
 import '../widgets/egate_visit.dart';
+import '../widgets/page_refresh.dart';
 import 'generic_webview_page.dart';
 
 class CampusJobsPage extends StatelessWidget {
   const CampusJobsPage({super.key});
+
   @override
   Widget build(BuildContext context) => EgateVisit(
         title: '校园岗位',
         dropWhenInactive: true,
-        builder: (client, studentId) => CampusJobPanels(client: client, studentId: studentId),
+        builder: (client, studentId) =>
+            CampusJobPanels(client: client, studentId: studentId),
       );
 }
 
 class CampusJobPanels extends StatefulWidget {
-  const CampusJobPanels({super.key, required this.client, required this.studentId});
+  const CampusJobPanels({
+    super.key,
+    required this.client,
+    required this.studentId,
+  });
+
   final EmapClient client;
   final String studentId;
+
   @override
   State<CampusJobPanels> createState() => _CampusJobPanelsState();
 }
 
-class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingObserver {
+class _CampusJobPanelsState extends State<CampusJobPanels>
+    with WidgetsBindingObserver {
   late final service = CampusJobService(widget.client, widget.studentId);
+  final _searchCtrl = TextEditingController();
   var program = CampusJobProgram.workStudy;
   int panel = 0;
+  int _refreshNonce = 0;
   bool showPay = false;
+  String _query = '';
   CampusJobOpening? selected;
 
   @override
@@ -49,12 +65,15 @@ class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingOb
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (showPay && state != AppLifecycleState.resumed) setState(() => showPay = false);
+    if (showPay && state != AppLifecycleState.resumed) {
+      setState(() => showPay = false);
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _searchCtrl.dispose();
     service.dispose();
     super.dispose();
   }
@@ -64,6 +83,13 @@ class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingOb
       panel = next;
       program = target;
       showPay = false;
+      selected = null;
+    });
+  }
+
+  Future<void> _refresh() async {
+    setState(() {
+      _refreshNonce++;
       selected = null;
     });
   }
@@ -128,7 +154,8 @@ class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingOb
                 '学期': job.term,
                 '类别': job.category,
               }),
-              trailing: Icon(selected == job ? Icons.expand_less : Icons.expand_more),
+              trailing:
+                  Icon(selected == job ? TpIcons.expandLess : TpIcons.expandMore),
               onTap: () => toggleDetail(job),
             ),
             if (selected == job)
@@ -161,7 +188,7 @@ class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingOb
                         const SizedBox(height: TpTokens.space2),
                         FilledButton.icon(
                           onPressed: () => _openApplyDialog(merged),
-                          icon: const Icon(Icons.edit_document),
+                          icon: const Icon(TpIcons.document),
                           label: const Text('申请岗位'),
                         ),
                       ],
@@ -175,7 +202,9 @@ class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingOb
 
   Widget record(CampusJobRecord item) => ListTile(
         title: Text(
-          item.job.isNotEmpty ? item.job : (item.reference.isEmpty ? '岗位记录' : item.reference),
+          item.job.isNotEmpty
+              ? item.job
+              : (item.reference.isEmpty ? '岗位记录' : item.reference),
         ),
         subtitle: fields({
           '单位': item.unit,
@@ -193,6 +222,7 @@ class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingOb
         : showPay
             ? value
             : '••••';
+    final canTogglePay = data.totalError == null || data.payments.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -202,11 +232,11 @@ class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingOb
             subtitle: Text(
               data.totalError ?? (data.total.isEmpty ? '暂无金额' : amount(data.total)),
             ),
-            trailing: data.totalError != null
+            trailing: !canTogglePay
                 ? null
                 : IconButton(
                     tooltip: showPay ? '隐藏金额' : '显示金额',
-                    icon: Icon(showPay ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                    icon: Icon(showPay ? TpIcons.eyeOff : TpIcons.eye),
                     onPressed: () => setState(() => showPay = !showPay),
                   ),
           ),
@@ -251,9 +281,30 @@ class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingOb
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('校园岗位')),
-        body: EgateVisitBody(
+  Widget build(BuildContext context) {
+    final colors = context.tpColors;
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(context);
+    final query = _query.trim().toLowerCase();
+    return Scaffold(
+      backgroundColor: colors.canvas,
+      extendBodyBehindAppBar:
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: BlurredAppBar(
+        title: const Text('校园岗位'),
+        actions: [
+          PageRefreshButton(onRefresh: _refresh),
+          if (!isDesktop())
+            IconButton(
+              tooltip: '刷新',
+              icon: const Icon(TpIcons.refresh),
+              onPressed: () => unawaited(_refresh()),
+            ),
+        ],
+      ),
+      body: PageRefreshIndicator(
+        onRefresh: _refresh,
+        child: EgateVisitBody(
+          topInset: topInset,
           children: [
             AdaptiveSegmentedControl(
               value: program.index,
@@ -263,8 +314,11 @@ class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingOb
             Wrap(
               spacing: TpTokens.space2,
               children: [
-                for (final (i, label)
-                    in ['可申请岗位', '我的申请', if (program == CampusJobProgram.workStudy) '在岗薪资'].indexed)
+                for (final (i, label) in [
+                  '可申请岗位',
+                  '我的申请',
+                  if (program == CampusJobProgram.workStudy) '在岗薪资',
+                ].indexed)
                   ChoiceChip(
                     selected: panel == i,
                     label: Text(label),
@@ -272,30 +326,67 @@ class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingOb
                   ),
               ],
             ),
+            if (panel == 0)
+              TextField(
+                controller: _searchCtrl,
+                onChanged: (v) => setState(() => _query = v),
+                decoration: InputDecoration(
+                  labelText: '搜索岗位、用工单位或类别',
+                  prefixIcon: const Icon(TpIcons.search),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: '清除搜索',
+                          icon: const Icon(TpIcons.close),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _query = '');
+                          },
+                        ),
+                ),
+              ),
             OutlinedButton.icon(
               onPressed: openWeb,
-              icon: const Icon(Icons.open_in_new),
+              icon: const Icon(TpIcons.externalLink),
               label: Text('前往${program.label}网页办理'),
             ),
             if (panel == 0)
               EgateQueryResult(
-                key: ValueKey(program),
+                key: ValueKey((program, _refreshNonce)),
                 load: () => service.openings(program),
-                builder: (jobs) => jobs.isEmpty
-                    ? const TpCard(child: ListTile(title: Text('暂无可申请岗位')))
-                    : Column(
-                        children: [
-                          for (final job in jobs)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: TpTokens.space2),
-                              child: jobCard(job),
-                            ),
-                        ],
-                      ),
+                builder: (jobs) {
+                  final filtered = query.isEmpty
+                      ? jobs
+                      : jobs
+                          .where(
+                            (j) =>
+                                '${j.title} ${j.unit} ${j.unitCode} ${j.category}'
+                                    .toLowerCase()
+                                    .contains(query),
+                          )
+                          .toList();
+                  if (filtered.isEmpty) {
+                    return TpStateCard.empty(
+                      icon: TpIcons.briefcase,
+                      title: jobs.isEmpty ? '暂无可申请岗位' : '没有匹配的岗位',
+                      compact: true,
+                    );
+                  }
+                  return Column(
+                    children: [
+                      for (final job in filtered)
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(bottom: TpTokens.space2),
+                          child: jobCard(job),
+                        ),
+                    ],
+                  );
+                },
               ),
             if (panel == 1)
               EgateQueryResult(
-                key: ValueKey(program),
+                key: ValueKey(('apps', program, _refreshNonce)),
                 load: () => service.applications(program),
                 builder: (items) => TpCard(
                   child: Column(
@@ -306,10 +397,17 @@ class _CampusJobPanelsState extends State<CampusJobPanels> with WidgetsBindingOb
                   ),
                 ),
               ),
-            if (panel == 2) EgateQueryResult(load: service.employment, builder: payPanel),
+            if (panel == 2)
+              EgateQueryResult(
+                key: ValueKey(('pay', _refreshNonce)),
+                load: service.employment,
+                builder: payPanel,
+              ),
           ],
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _JobApplyDialog extends StatefulWidget {
@@ -357,6 +455,8 @@ class _JobApplyDialogState extends State<_JobApplyDialog> {
         '项目：${widget.program.label}',
         '岗位：${widget.job.title}',
         if (widget.job.unit.isNotEmpty) '单位：${widget.job.unit}',
+        if (!ta) '联系电话：${phoneCtrl.text.trim()}',
+        if (!ta) '服从跨部门调剂：${acceptAdjustment ? '是' : '否'}',
         '申请理由：${reasonCtrl.text.trim()}',
       ].join('\n'),
       actions: const [
@@ -420,7 +520,8 @@ class _JobApplyDialogState extends State<_JobApplyDialog> {
                   controller: phoneCtrl,
                   keyboardType: TextInputType.phone,
                   decoration: const InputDecoration(labelText: '联系电话'),
-                  validator: (v) => (v ?? '').trim().isEmpty ? '请填写联系电话' : null,
+                  validator: (v) =>
+                      (v ?? '').trim().isEmpty ? '请填写联系电话' : null,
                 ),
                 const SizedBox(height: TpTokens.space2),
               ],
@@ -429,7 +530,9 @@ class _JobApplyDialogState extends State<_JobApplyDialog> {
                 controller: reasonCtrl,
                 minLines: 3,
                 maxLines: 6,
-                decoration: InputDecoration(labelText: ta ? '申请理由（不少于 20 字）' : '申请理由'),
+                decoration: InputDecoration(
+                  labelText: ta ? '申请理由（不少于 20 字）' : '申请理由',
+                ),
                 validator: (v) {
                   final text = (v ?? '').trim();
                   if (text.isEmpty) return '请填写申请理由';
@@ -450,11 +553,15 @@ class _JobApplyDialogState extends State<_JobApplyDialog> {
                   contentPadding: EdgeInsets.zero,
                   title: const Text('服从跨部门调剂'),
                   value: acceptAdjustment,
-                  onChanged: busy ? null : (v) => setState(() => acceptAdjustment = v),
+                  onChanged:
+                      busy ? null : (v) => setState(() => acceptAdjustment = v),
                 ),
               if (error != null) ...[
                 const SizedBox(height: TpTokens.space2),
-                Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                Text(
+                  error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
               ],
             ],
           ),

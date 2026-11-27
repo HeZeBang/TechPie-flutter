@@ -53,10 +53,10 @@ String gymFormatDate(DateTime date) => '${date.year.toString().padLeft(4, '0')}-
     '${date.day.toString().padLeft(2, '0')}';
 
 IconData gymSportIcon(OaSport sport) => switch (sport) {
-      OaSport.badminton => Icons.sports_tennis,
-      OaSport.pingpong => Icons.sports_handball,
-      OaSport.tennis => Icons.sports_tennis,
-      OaSport.pickleball => Icons.sports_baseball,
+      OaSport.badminton => TpIcons.activity,
+      OaSport.pingpong => TpIcons.circleDot,
+      OaSport.tennis => TpIcons.activity,
+      OaSport.pickleball => TpIcons.circleDot,
     };
 
 const Set<String> _parentVenueNames = {

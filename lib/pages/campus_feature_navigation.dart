@@ -9,12 +9,14 @@ import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/uni_auth_login.dart';
 import 'generic_webview_page.dart';
 
-void openCampusFeature(BuildContext context, Feature feature) {
+Future<void> openCampusFeature(BuildContext context, Feature feature) async {
   unawaited(AppHaptics.play(AppHaptics.selection));
   final services = ServiceProvider.of(context);
-  if (!services.authService.isLoggedIn) {
-    unawaited(startUniAuthLogin(context));
-    return;
+  if (feature.id != 'campus_card' && !services.authService.isLoggedIn) {
+    await startUniAuthLogin(context);
+    if (!context.mounted || !services.authService.isLoggedIn) {
+      return;
+    }
   }
   services.telemetry?.featureOpened(feature.id);
   switch (feature.mode) {

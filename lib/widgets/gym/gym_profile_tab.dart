@@ -100,6 +100,15 @@ class _GymProfileTabState extends State<GymProfileTab>
         message: '预约信息已保存',
         style: AdaptiveFeedbackStyle.success,
       );
+    } on Object catch (e) {
+      if (!mounted) return;
+      final detail =
+          e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '').trim();
+      showAdaptiveFeedback(
+        context: context,
+        message: detail.isEmpty ? '保存失败，请重试' : '保存失败：$detail',
+        style: AdaptiveFeedbackStyle.error,
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }

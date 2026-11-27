@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../models/feature.dart';
-import '../services/service_provider.dart';
 import '../theme/tp_icons.dart';
 import 'design_system/tp_feature_grid.dart';
 
@@ -39,12 +38,7 @@ class AppCard extends StatelessWidget {
             id: feature.id,
             label: feature.description,
             icon: feature.icon.icon ?? TpIcons.activities,
-            onTap: () {
-              if (feature == moreFeature && onFeatureTap != null) {
-                context.getInheritedWidgetOfExactType<ServiceProvider>()?.telemetry?.featureOpened('campus_services');
-              }
-              onFeatureTap?.call(feature);
-            },
+            onTap: () => onFeatureTap?.call(feature),
           ),
       ],
     );

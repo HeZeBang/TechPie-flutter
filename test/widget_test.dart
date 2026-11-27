@@ -163,7 +163,9 @@ void main() {
         findsOneWidget,
       );
       final feature = featureEntries.firstWhere((entry) => entry.id == 'student_allowance');
-      openCampusFeature(tester.element(find.byType(AppShell)), feature);
+      unawaited(
+        openCampusFeature(tester.element(find.byType(AppShell)), feature),
+      );
       await tester.pumpAndSettle();
       await metrics.flush();
       expect(opened.where((id) => id == feature.id), hasLength(optIn ? 1 : 0));

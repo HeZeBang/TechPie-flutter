@@ -380,6 +380,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       appShellPendingTab.value = AppShell.campusServicesTabIndex;
       return;
     }
+    context
+        .getInheritedWidgetOfExactType<ServiceProvider>()
+        ?.telemetry
+        ?.featureOpened('campus_services');
     await pushAdaptivePage<void>(
       context,
       builder: (_) => CampusServicesPage(storage: storage),
@@ -980,7 +984,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         columns: 3,
         onFeatureTap: (feature) async {
           if (feature != moreFeature) {
-            openCampusFeature(context, feature);
+            await openCampusFeature(context, feature);
             return;
           }
           await _openMoreCampusServices(storage);
