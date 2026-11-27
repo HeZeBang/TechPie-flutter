@@ -196,6 +196,9 @@ class _TpSegmentedControlState extends State<TpSegmentedControl>
               decoration: BoxDecoration(
                 color: trackColor,
                 borderRadius: outerRadius,
+              ),
+              foregroundDecoration: BoxDecoration(
+                borderRadius: outerRadius,
                 border: trackBorder,
               ),
               child: Stack(
@@ -276,10 +279,26 @@ class _TpSegmentedControlState extends State<TpSegmentedControl>
               ),
             );
 
+            final direction = Directionality.of(context);
+            final interactiveTrack = GestureDetector(
+              excludeFromSemantics: true,
+              onHorizontalDragEnd: widget.enabled && count > 1 && segmentWidth > 0
+                  ? (details) {
+                      final offset = details.localPosition.dx - _trackPadding;
+                      final startOffset = direction == TextDirection.rtl
+                          ? innerWidth - offset
+                          : offset;
+                      final index = (startOffset / segmentWidth).floor();
+                      _select(_clampedIndex(index, count));
+                    }
+                  : null,
+              child: track,
+            );
+
             if (widget.shrinkWrap && hasBoundedWidth) {
-              return Center(child: track);
+              return Center(child: interactiveTrack);
             }
-            return track;
+            return interactiveTrack;
           },
         ),
       ),

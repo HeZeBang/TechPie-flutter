@@ -66,6 +66,62 @@ void main() {
     }
   });
 
+  testWidgets('TpSegmentedControl selects the segment under a horizontal drag', (
+    tester,
+  ) async {
+    var selected = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 240,
+            child: TpSegmentedControl(
+              value: selected,
+              segments: const ['A', 'B', 'C'],
+              onChanged: (index) => selected = index,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final start = tester.getCenter(find.text('A'));
+    final end = tester.getCenter(find.text('C'));
+    await tester.dragFrom(start, end - start);
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(selected, 2);
+  });
+
+  testWidgets('TpSegmentedControl aligns the thumb with the last segment', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(),
+        home: Scaffold(
+          body: SizedBox(
+            width: 240,
+            child: TpSegmentedControl(
+              value: 2,
+              segments: const ['A', 'B', 'C'],
+              onChanged: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final thumb = find.byWidgetPredicate(
+      (widget) =>
+          widget is PositionedDirectional && widget.child is IgnorePointer,
+    );
+    expect(
+      tester.getCenter(thumb).dx,
+      closeTo(tester.getCenter(find.text('C')).dx, 0.01),
+    );
+  });
+
   testWidgets('TpSegmentedControl falls back safely in bare MaterialApp without ThemeService', (
     tester,
   ) async {
