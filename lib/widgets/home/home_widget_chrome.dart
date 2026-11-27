@@ -19,6 +19,20 @@ IconData homeWidgetIcon(HomeWidgetId id) => switch (id) {
       HomeWidgetId.todayCourses => TpIcons.course,
       HomeWidgetId.deadlines => TpIcons.deadlines,
       HomeWidgetId.quickActions => TpIcons.activities,
+      HomeWidgetId.campusGrades => TpIcons.trophy,
+      HomeWidgetId.campusStudyPlan => TpIcons.studyPlan,
+      HomeWidgetId.campusBlackboard => TpIcons.graduation,
+      HomeWidgetId.campusElrcRecordings => TpIcons.recordings,
+      HomeWidgetId.campusEcourse => TpIcons.classroom,
+      HomeWidgetId.campusCourseCatalog => TpIcons.course,
+      HomeWidgetId.campusCertificates => TpIcons.document,
+      HomeWidgetId.campusOaGym => TpIcons.gym,
+      HomeWidgetId.campusStudentLeave => TpIcons.building,
+      HomeWidgetId.campusHolidayTravel => TpIcons.luggage,
+      HomeWidgetId.campusActivities => TpIcons.scan,
+      HomeWidgetId.campusJobs => TpIcons.briefcase,
+      HomeWidgetId.campusStudentAllowance => TpIcons.allowance,
+      HomeWidgetId.campusPnpMinor => TpIcons.pnpMinor,
     };
 
 /// Scope and lifecycle wrapper for the floating mobile drag-reorder proxy inside

@@ -81,7 +81,7 @@ Future<void> showHomeWidgetGallery({
   );
 }
 
-class _HomeWidgetGalleryBody extends StatelessWidget {
+class _HomeWidgetGalleryBody extends StatefulWidget {
   const _HomeWidgetGalleryBody({
     required this.hostContext,
     required this.contentPadding,
@@ -101,13 +101,54 @@ class _HomeWidgetGalleryBody extends StatelessWidget {
   final VoidCallback onResetDefaults;
 
   @override
+  State<_HomeWidgetGalleryBody> createState() => _HomeWidgetGalleryBodyState();
+}
+
+class _HomeWidgetGalleryBodyState extends State<_HomeWidgetGalleryBody> {
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _matchesQuery(HomeWidgetMeta meta, String query) {
+    if (query.isEmpty) return true;
+    return meta.title.toLowerCase().contains(query) ||
+        meta.subtitle.toLowerCase().contains(query) ||
+        meta.id.key.toLowerCase().contains(query) ||
+        meta.group.label.toLowerCase().contains(query) ||
+        meta.keywords.any((k) => k.toLowerCase().contains(query));
+  }
+
+  @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<HomeGalleryState>(
-      valueListenable: stateListenable,
+      valueListenable: widget.stateListenable,
       builder: (context, state, _) {
         final colors = context.tpColors;
+        final query = _query.trim().toLowerCase();
+        final showStyleCard = query.isEmpty ||
+            '校园卡样式 compact full 精简条带 完整卡面'
+                .toLowerCase()
+                .contains(query);
+        final groups = [
+          for (final group in HomeWidgetGroup.values)
+            (
+              group: group,
+              ids: [
+                for (final id in HomeWidgetId.values)
+                  if (homeWidgetMetaFor(id).group == group &&
+                      _matchesQuery(homeWidgetMetaFor(id), query))
+                    id,
+              ],
+            ),
+        ].where((entry) => entry.ids.isNotEmpty).toList();
+
         return Padding(
-          padding: contentPadding,
+          padding: widget.contentPadding,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -128,9 +169,15 @@ class _HomeWidgetGalleryBody extends StatelessWidget {
                       ),
                     ),
                   ),
+                  TpBadge(
+                    label:
+                        '已添加 ${state.visibleIds.length}/${HomeWidgetId.values.length}',
+                    tone: TpBadgeTone.muted,
+                  ),
+                  const SizedBox(width: TpTokens.space1),
                   AdaptiveButton(
                     key: const ValueKey('home.gallery-close'),
-                    onPressed: () => Navigator.of(hostContext).pop(),
+                    onPressed: () => Navigator.of(widget.hostContext).pop(),
                     icon: TpIcons.close,
                     sfSymbol: 'xmark',
                     accessibilityLabel: '关闭',
@@ -146,75 +193,125 @@ class _HomeWidgetGalleryBody extends StatelessWidget {
                 style: TpTypography.itemMeta(colors),
               ),
               const SizedBox(height: TpTokens.space3),
+              TextField(
+                key: const ValueKey('home.gallery-search'),
+                controller: _searchCtrl,
+                onChanged: (value) => setState(() => _query = value),
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  labelText: '搜索组件',
+                  hintText: '按名称或关键词筛选，如 GPA、请假、Blackboard',
+                  filled: true,
+                  fillColor: colors.surfaceSubtle,
+                  isDense: true,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(TpTokens.radiusM),
+                    borderSide: BorderSide(color: colors.border),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(TpTokens.radiusM),
+                    borderSide: BorderSide(color: colors.border),
+                  ),
+                  prefixIcon: Icon(TpIcons.search, color: colors.textMuted),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: '清除搜索',
+                          icon: const Icon(TpIcons.close),
+                          onPressed: () {
+                            _searchCtrl.clear();
+                            setState(() => _query = '');
+                          },
+                        ),
+                ),
+              ),
+              const SizedBox(height: TpTokens.space3),
               Flexible(
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      TpSectionCard(
-                        title: '校园卡样式',
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(TpTokens.space3),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: _StyleOptionTile(
-                                    key: const ValueKey(
-                                      'home.gallery-style-compact',
-                                    ),
-                                    title: '精简条带',
-                                    subtitle: '紧凑单行卡片，节省首屏空间',
-                                    selected: state.campusCardStyle ==
+                      if (showStyleCard)
+                        TpSectionCard(
+                          title: '校园卡样式',
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.all(TpTokens.space3),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: _StyleOptionTile(
+                                      key: const ValueKey(
+                                        'home.gallery-style-compact',
+                                      ),
+                                      title: '精简条带',
+                                      subtitle: '紧凑单行卡片，节省首屏空间',
+                                      selected: state.campusCardStyle ==
+                                          HomeCampusCardStyle.compact,
+                                      onTap: () =>
+                                          widget.onChangeCampusCardStyle(
                                         HomeCampusCardStyle.compact,
-                                    onTap: () => onChangeCampusCardStyle(
-                                      HomeCampusCardStyle.compact,
+                                      ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: TpTokens.space2),
-                                Expanded(
-                                  child: _StyleOptionTile(
-                                    key: const ValueKey(
-                                      'home.gallery-style-full',
-                                    ),
-                                    title: '完整卡面',
-                                    subtitle: '展开校徽卡面与完整操作栏',
-                                    selected: state.campusCardStyle ==
+                                  const SizedBox(width: TpTokens.space2),
+                                  Expanded(
+                                    child: _StyleOptionTile(
+                                      key: const ValueKey(
+                                        'home.gallery-style-full',
+                                      ),
+                                      title: '完整卡面',
+                                      subtitle: '展开校徽卡面与完整操作栏',
+                                      selected: state.campusCardStyle ==
+                                          HomeCampusCardStyle.full,
+                                      onTap: () =>
+                                          widget.onChangeCampusCardStyle(
                                         HomeCampusCardStyle.full,
-                                    onTap: () => onChangeCampusCardStyle(
-                                      HomeCampusCardStyle.full,
+                                      ),
                                     ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
+                          ],
+                        ),
+                      if (groups.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.only(top: TpTokens.space2),
+                          child: TpStateCard.empty(
+                            icon: TpIcons.search,
+                            title: '没有匹配的组件',
+                            compact: true,
+                          ),
+                        )
+                      else
+                        for (var i = 0; i < groups.length; i++) ...[
+                          if (showStyleCard || i > 0)
+                            const SizedBox(height: TpTokens.space3),
+                          TpSectionCard(
+                            title: groups[i].group.label,
+                            children: [
+                              for (var j = 0; j < groups[i].ids.length; j++)
+                                _GalleryWidgetRow(
+                                  id: groups[i].ids[j],
+                                  added: state.visibleIds
+                                      .contains(groups[i].ids[j]),
+                                  showDivider: j < groups[i].ids.length - 1,
+                                  onAdd: () =>
+                                      widget.onAddWidget(groups[i].ids[j]),
+                                  onRemove: () =>
+                                      widget.onRemoveWidget(groups[i].ids[j]),
+                                ),
+                            ],
                           ),
                         ],
-                      ),
-                      const SizedBox(height: TpTokens.space3),
-                      TpSectionCard(
-                        title: '可用组件',
-                        children: [
-                          for (var i = 0; i < HomeWidgetId.values.length; i++)
-                            _GalleryWidgetRow(
-                              id: HomeWidgetId.values[i],
-                              added: state.visibleIds
-                                  .contains(HomeWidgetId.values[i]),
-                              showDivider: i < HomeWidgetId.values.length - 1,
-                              onAdd: () => onAddWidget(HomeWidgetId.values[i]),
-                              onRemove: () =>
-                                  onRemoveWidget(HomeWidgetId.values[i]),
-                            ),
-                        ],
-                      ),
                       const SizedBox(height: TpTokens.space3),
                       AdaptiveButton(
                         key: const ValueKey('home.gallery-reset'),
                         onPressed: () {
-                          onResetDefaults();
-                          Navigator.of(hostContext).pop();
+                          widget.onResetDefaults();
+                          Navigator.of(widget.hostContext).pop();
                         },
                         icon: TpIcons.reset,
                         sfSymbol: 'arrow.counterclockwise',
