@@ -11,6 +11,77 @@ import 'package:techpie/services/ids/ids_client.dart';
 import 'package:techpie/services/ids/software_passkey.dart';
 
 void main() {
+  test('Ecourse CAS upgrades the callback and repairs malformed cookie dates', () async {
+    const ecourse = 'https://ecourse.shanghaitech.edu.cn';
+    const broker = '$ecourse:8600';
+    final requests = <RequestOptions>[];
+    final dio = Dio()
+      ..interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+        requests.add(options);
+        final (status, headers, body) = switch (requests.length) {
+          1 => (302, <String, List<String>>{'location': ['$broker/auth/start']}, ''),
+          2 => (
+              303,
+              <String, List<String>>{
+                'location': ['${SoftwarePasskey.origin}/authserver/login'],
+                'set-cookie': ['AUTH_SESSION_ID=broker-only; Path=/auth; Secure'],
+              },
+              '',
+            ),
+          3 => (302, <String, List<String>>{'location': ['$broker/auth/callback']}, ''),
+          4 => (
+              303,
+              <String, List<String>>{
+                'location': ['http://ecourse.shanghaitech.edu.cn/login?ticket=ST-fixture'],
+              },
+              '',
+            ),
+          5 => (
+              302,
+              <String, List<String>>{
+                'location': ['/user/index'],
+                'set-cookie': [
+                  'session=ecourse-fixture; Expires=Fri; Secure; HttpOnly; '
+                      'SameSite=Lax,01-Jan-2100 00:00:00 GMT; Path=/',
+                  'role_token=expired; Expires=Thu; Secure; HttpOnly; '
+                      'SameSite=Lax,01-Jan-1970 00:00:00 GMT; Path=/',
+                ],
+              },
+              '',
+            ),
+          6 => (200, <String, List<String>>{}, 'Course home'),
+          7 => (
+              200,
+              <String, List<String>>{'content-type': ['application/json']},
+              '{"courses":[]}',
+            ),
+          _ => throw StateError('Unexpected Ecourse SSO request'),
+        };
+        handler.resolve(
+          Response<List<int>>(
+            requestOptions: options,
+            statusCode: status,
+            data: utf8.encode(body),
+            headers: Headers.fromMap(headers),
+          ),
+        );
+      },),);
+
+    final cookie = await IdsClient(http: dio).mintCookie('ecourse', {'tgc': 'ids-only'});
+
+    expect(cookie, 'session=ecourse-fixture');
+    expect(requests, hasLength(7));
+    expect(requests.every((request) => request.uri.scheme == 'https'), isTrue);
+    expect(requests.first.uri.path, '/login');
+    expect(requests[4].uri.origin, ecourse);
+    expect(requests[4].uri.queryParameters['ticket'], 'ST-fixture');
+    expect(requests[2].headers['Cookie'], 'CASTGC=ids-only');
+    expect(requests[3].headers['Cookie'], 'AUTH_SESSION_ID=broker-only');
+    expect(requests[5].headers['Cookie'], 'session=ecourse-fixture');
+    expect(requests[6].uri.path, '/api/my-courses');
+    expect(requests[6].headers['Cookie'], 'session=ecourse-fixture');
+  });
+
   test('local authentication logs cover the lifecycle without recording credentials', () async {
     final adapter = _School()..recheckCodes.addAll(['2106010003', '0']);
     final logger = DebugLogger()..enabled = true;

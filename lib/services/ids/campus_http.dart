@@ -18,8 +18,13 @@ class IdsException implements Exception {
 /// App-owned HTTP session with host, path, expiry and Secure cookie scoping.
 /// Authentication logs contain diagnostics only, never payloads or cookies.
 class CampusHttp {
-  CampusHttp(this.http, {DebugLogger? logger, Set<String>? allowedOrigins})
-      : _logger = logger,
+  CampusHttp(
+    this.http, {
+    DebugLogger? logger,
+    Set<String>? allowedOrigins,
+    String? httpsRedirectHost,
+  })  : _httpsRedirectHost = httpsRedirectHost,
+        _logger = logger,
         _allowedOrigins = allowedOrigins == null ? null : Set.unmodifiable(allowedOrigins);
   final Dio http;
   final DebugLogger? _logger;
@@ -27,8 +32,15 @@ class CampusHttp {
   /// If set, limits this session's requests and redirects to exact HTTPS
   /// origins (including ports) instead of the default campus host allowlist.
   final Set<String>? _allowedOrigins;
+  final String? _httpsRedirectHost;
   final CookieJar jar = CookieJar();
   final Map<String, Map<String, String>> _stored = {};
+  // The E 云课堂 gateway inserts the flags before the comma in Expires.
+  static final _ecourseCookieExpiry = RegExp(
+    r'(;\s*Expires=[A-Za-z]{3});\s*Secure;\s*HttpOnly;\s*SameSite=Lax,\s*'
+    r'(\d{2}-[A-Za-z]{3}-\d{4} \d{2}:\d{2}:\d{2} GMT)(?=;|$)',
+    caseSensitive: false,
+  );
   static const hosts = {
     'ids.shanghaitech.edu.cn',
     'eams.shanghaitech.edu.cn',
@@ -50,7 +62,13 @@ class CampusHttp {
     for (final value in values) {
       Cookie cookie;
       try {
-        cookie = Cookie.fromSetCookieValue(value);
+        final header = uri.origin == 'https://ecourse.shanghaitech.edu.cn'
+            ? value.replaceAllMapped(
+                _ecourseCookieExpiry,
+                (match) => '${match[1]}, ${match[2]}; Secure; HttpOnly; SameSite=Lax',
+              )
+            : value;
+        cookie = Cookie.fromSetCookieValue(header);
       } on HttpException {
         continue;
       }
@@ -145,6 +163,13 @@ class CampusHttp {
       final location = followRedirects ? response.headers.value('location') : null;
       if ([301, 302, 303, 307, 308].contains(status) && location != null) {
         uri = uri.resolve(location);
+        if (uri.scheme == 'http' &&
+            uri.host == _httpsRedirectHost &&
+            uri.port == 80 &&
+            uri.userInfo.isEmpty) {
+          // Match the browser's HSTS upgrade before sending the CAS ticket.
+          uri = uri.replace(scheme: 'https', port: 443);
+        }
         if (status == 303 || ((status == 301 || status == 302) && method == 'POST')) {
           method = 'GET';
           data = null;
