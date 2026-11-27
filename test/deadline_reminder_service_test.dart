@@ -731,7 +731,18 @@ void main() {
         await tester.tap(button);
         await tester.pumpAndSettle();
         if (!desktop) {
-          await tester.tap(find.text('编辑'));
+          final label = find.text('编辑');
+          final popup = find.ancestor(
+            of: label,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is Material && widget.type == MaterialType.card,
+            ),
+          );
+          final popupSize = tester.getSize(popup);
+          expect(popupSize.width, lessThan(84));
+          expect(popupSize.height, lessThan(48));
+          expect((tester.getCenter(label) - tester.getCenter(popup)).distance, lessThan(0.5));
+          await tester.tap(label);
           await tester.pumpAndSettle();
         }
         expect(find.byType(DeadlineEditorPage), findsOneWidget);

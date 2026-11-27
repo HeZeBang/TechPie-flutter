@@ -440,6 +440,9 @@ class _DeadlineEditorPageState extends State<DeadlineEditorPage> {
 class DeadlineEditButton extends StatelessWidget {
   const DeadlineEditButton({super.key, required this.assignment});
 
+  static const double _editMenuWidth = 64;
+  static const double _editMenuItemHeight = 40;
+
   final Assignment assignment;
 
   @override
@@ -465,8 +468,17 @@ class DeadlineEditButton extends StatelessWidget {
       key: ValueKey((epoch, assignment.platform, assignment.id)),
       icon: const Icon(TpIcons.more, size: 18),
       tooltip: 'Deadline 操作',
+      constraints: const BoxConstraints.tightFor(width: _editMenuWidth),
+      menuPadding: EdgeInsets.zero,
       onSelected: (_) => openEditor(),
-      itemBuilder: (_) => const [PopupMenuItem(value: 'edit', child: Text('编辑'))],
+      itemBuilder: (_) => const [
+        PopupMenuItem(
+          value: 'edit',
+          height: _editMenuItemHeight,
+          padding: EdgeInsets.symmetric(horizontal: TpTokens.space2),
+          child: Center(child: Text('编辑', textAlign: TextAlign.center)),
+        ),
+      ],
     );
   }
 }
