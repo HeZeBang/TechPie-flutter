@@ -3,5 +3,10 @@ import WidgetKit
 
 @main
 struct DeadlineWidgets: WidgetBundle {
-  var body: some Widget { DeadlineWidget() }
+  var body: some Widget {
+    EcardPayWidget()
+    ScheduleWidget()
+    DeadlineWidget()
+    TodayOverviewWidget()
+  }
 }

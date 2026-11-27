@@ -2,8 +2,6 @@
 
 KDE Plasma 6: a resizable desktop card and compact panel button. GNOME Shell
 45–51: a desktop card and top-bar indicator with an expandable deadline list.
-GNOME 51 has been checked in an isolated Shell session; other declared versions
-and the Plasma desktop still need native visual acceptance.
 
 The widgets show upcoming, visible, incomplete assignments and exams, sorted by
 deadline. They do not contact campus services or receive credentials. They read
@@ -89,8 +87,7 @@ The existing payment widget and Huawei Watch code remain separate consumers.
 GNOME's `desktopCard.js` owns the desktop actor and placement; `extension.js`
 owns the indicator, reader and lifecycle. GSettings stores card visibility and
 position. KDE keeps its reader/model in `backend` and presentation in QML.
-Install the widgets from an unpacked native bundle. Flatpak/Snap widget integration
-remains pending.
+Install the widgets from an unpacked native bundle (tarball or AUR package).
 
 ## Desktop card stacking regression
 

@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:techpie/widgets/adaptive_alert_dialog.dart';
 
 import '../../app/app_providers.dart';
 import '../../domain/models/offline_models.dart';
@@ -181,29 +182,23 @@ final class _AuthorizationBody extends ConsumerWidget {
       };
 
   Future<void> _remove(BuildContext context, WidgetRef ref) async {
-    final accepted = await showAdaptiveDialog<bool>(
+    final accepted = await showAdaptiveAlertDialog<bool>(
       context: context,
       useRootNavigator: false,
-      builder: (dialogContext) => AlertDialog.adaptive(
-        title: const Text('移除此设备'),
-        content: const Text('此操作只删除本机离线授权，不会在服务端吊销。'),
-        actions: [
-          TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: context.gpColors.textSecondary,
-            ),
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: context.gpColors.danger,
-            ),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
+      title: '移除此设备',
+      message: '此操作只删除本机离线授权，不会在服务端吊销。',
+      actions: const [
+        AdaptiveAlertAction<bool>(
+          label: '取消',
+          value: false,
+          isCancel: true,
+        ),
+        AdaptiveAlertAction<bool>(
+          label: '删除',
+          value: true,
+          isDestructive: true,
+        ),
+      ],
     );
     if (accepted == true && context.mounted) {
       await ref
@@ -223,19 +218,14 @@ final class _AuthorizationBody extends ConsumerWidget {
       if (!context.mounted) return;
       await ref.read(appRuntimeProvider).feedback.play(FeedbackEvent.error);
       if (!context.mounted) return;
-      await showAdaptiveDialog<void>(
+      await showAdaptiveAlertDialog<void>(
         context: context,
         useRootNavigator: false,
-        builder: (dialogContext) => AlertDialog.adaptive(
-          title: const Text('离线授权'),
-          content: Text(GpStateView.safeUiError(error)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('完成'),
-            ),
-          ],
-        ),
+        title: '离线授权',
+        message: GpStateView.safeUiError(error),
+        actions: const [
+          AdaptiveAlertAction<void>(label: '完成', isDefault: true),
+        ],
       );
     }
   }

@@ -20,6 +20,7 @@ class TpStateCard extends StatelessWidget {
     required this.title,
     this.message,
     this.tone = TpStateTone.neutral,
+    this.leading,
     this.primaryActionLabel,
     this.primaryActionIcon,
     this.primaryActionSfSymbol,
@@ -39,6 +40,7 @@ class TpStateCard extends StatelessWidget {
     required this.title,
     this.message,
     this.tone = TpStateTone.neutral,
+    this.leading,
     this.primaryActionLabel,
     this.primaryActionIcon = TpIcons.refresh,
     this.primaryActionSfSymbol = 'arrow.clockwise',
@@ -58,6 +60,7 @@ class TpStateCard extends StatelessWidget {
     required this.title,
     this.message,
     this.tone = TpStateTone.danger,
+    this.leading,
     this.primaryActionLabel = '重试',
     this.primaryActionIcon = TpIcons.refresh,
     this.primaryActionSfSymbol = 'arrow.clockwise',
@@ -77,6 +80,7 @@ class TpStateCard extends StatelessWidget {
     required this.title,
     this.message,
     this.tone = TpStateTone.brand,
+    this.leading,
     this.primaryActionLabel,
     this.primaryActionIcon = TpIcons.login,
     this.primaryActionSfSymbol = 'link',
@@ -94,6 +98,7 @@ class TpStateCard extends StatelessWidget {
   final String title;
   final String? message;
   final TpStateTone tone;
+  final Widget? leading;
   final String? primaryActionLabel;
   final IconData? primaryActionIcon;
   final String? primaryActionSfSymbol;
@@ -127,15 +132,16 @@ class TpStateCard extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-              color: iconBg,
-              borderRadius: BorderRadius.circular(TpTokens.radiusM),
-            ),
-            child: Icon(icon, size: TpTokens.iconL, color: iconFg),
-          ),
+          leading ??
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(TpTokens.radiusM),
+                ),
+                child: Icon(icon, size: TpTokens.iconL, color: iconFg),
+              ),
           const SizedBox(height: TpTokens.space3),
           Text(
             title,

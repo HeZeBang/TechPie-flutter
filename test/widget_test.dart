@@ -31,6 +31,7 @@ import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/services/usage_telemetry.dart';
 import 'package:techpie/theme/tp_icons.dart';
+import 'package:techpie/widgets/adaptive_checkbox.dart';
 import 'package:techpie/widgets/app_shell/app_shell.dart';
 import 'package:techpie/widgets/app_shell/tg_bottom_nav_bar.dart';
 
@@ -144,7 +145,10 @@ void main() {
       );
 
       final choice = find.text('发送匿名使用统计（可选）');
-      expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value, isFalse);
+      expect(
+        tester.widget<AdaptiveCheckboxRow>(find.byType(AdaptiveCheckboxRow)).value,
+        isFalse,
+      );
       if (optIn) {
         await tester.tap(choice);
         await tester.pump();
@@ -163,7 +167,9 @@ void main() {
         findsOneWidget,
       );
       final feature = featureEntries.firstWhere((entry) => entry.id == 'student_allowance');
-      openCampusFeature(tester.element(find.byType(AppShell)), feature);
+      unawaited(
+        openCampusFeature(tester.element(find.byType(AppShell)), feature),
+      );
       await tester.pumpAndSettle();
       await metrics.flush();
       expect(opened.where((id) => id == feature.id), hasLength(optIn ? 1 : 0));

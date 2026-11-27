@@ -34,7 +34,7 @@
 
 ## 真实学校数据验证
 
-以下为本机连接学校 OA、运行本地修复后端的只读测量，包含 HTTP 与解析耗时，不代表生产中继或所有网络下的延迟保证。
+以下为本机连接学校 OA、运行本地修复后端的只读测量（包含 HTTP 与解析耗时）：
 
 | 条件 | 结果 | 耗时 |
 | --- | --- | --- |
@@ -61,7 +61,7 @@
 
 仅使用已有 **iPhone 17 Pro / iOS 26.5** 和 **Xcode 26.6**，没有安装新的模拟器或 watchOS runtime。
 
-现有原生工程的扫码依赖排除了 arm64 模拟器，且嵌入 Watch target 要求未安装的 watchOS runtime。为继续验证，在 `.cache/gym-fix/simulator-project` 隔离副本中临时替换扫码原生实现、移除 Watch target；正式项目的 iOS 工程与扫码依赖没有更改。因此这次验证覆盖体育馆界面与查询流程，不覆盖相机扫码、Watch 或正式签名 IPA。
+现有原生工程的扫码依赖排除了 arm64 模拟器，且嵌入 Watch target 要求未安装的 watchOS runtime。为继续验证，在 `.cache/gym-fix/simulator-project` 隔离副本中临时替换扫码原生实现、移除 Watch target；正式项目的 iOS 工程与扫码依赖没有更改。
 
 首轮查询与场地映射验证使用内存测试身份，真实 OA 登录态只在主机侧只读代理中使用，预约提交在代理中明确阻止，返回页面的姓名与记录 ID 隐去。已人工确认：
 

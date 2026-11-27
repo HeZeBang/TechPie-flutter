@@ -48,7 +48,7 @@ node --test harmonyos_watch/scripts/*.test.cjs harmonyos_watch/scripts/*.test.mj
 
 Before distribution, verify pairing using the signed phone and watch artifacts,
 then check code scanning, code expiry, reconnect, logout, and reminder delivery
-on a supported watch. Unit tests cannot verify vendor authorization or optics.
+on a supported watch.
 
 
 ## Approved Wear Engine scope

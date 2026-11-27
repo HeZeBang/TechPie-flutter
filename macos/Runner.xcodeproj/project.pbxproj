@@ -32,7 +32,15 @@
 		48ED735C9A08085011C315DC /* Cocoa.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 49D9B073CC80F320BC796DAB /* Cocoa.framework */; };
 		58D1648CBE28C49F4066E59A /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = C77EC04E640BA4A10EBE77DB /* Localizable.strings */; };
 		6B21A0E93BEBF45D6366636C /* DeadlineWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66AD48055E9A7BAD61A99E6C /* DeadlineWidgetBridge.swift */; };
+		TPW200000000000000000201 /* HomeWidgetsBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW200000000000000000101 /* HomeWidgetsBridge.swift */; };
+		TPW200000000000000000202 /* TechPieWidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW200000000000000000102 /* TechPieWidgetTheme.swift */; };
+		TPW200000000000000000203 /* WidgetAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW200000000000000000103 /* WidgetAppIntents.swift */; };
+		TPW200000000000000000204 /* EcardPayWidgetShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW200000000000000000104 /* EcardPayWidgetShared.swift */; };
+		TPW200000000000000000205 /* ScheduleWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW200000000000000000105 /* ScheduleWidget.swift */; };
+		TPW200000000000000000206 /* TodayOverviewWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW200000000000000000106 /* TodayOverviewWidget.swift */; };
+		TPW200000000000000000208 /* card-bottom.png in Resources */ = {isa = PBXBuildFile; fileRef = TPW200000000000000000108 /* card-bottom.png */; };
 		A716AD2026B149D994791951 /* DeadlineReminderBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A716AD2026B149D994791952 /* DeadlineReminderBridge.swift */; };
+		CC4F9E102E6A10010000A101 /* MacosNativeControlsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4F9E112E6A10010000A102 /* MacosNativeControlsPlugin.swift */; };
 		863151EA9960F4B362BE6576 /* DeadlineWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF1C5A3900238226A31054A6 /* DeadlineWidget.swift */; };
 		9890447B4E16EA81E26F77C8 /* DeadlineWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = EAD23142838A8BD6B6D99DDA /* DeadlineWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		9DEF51B6C29B097558BBF13B /* DeadlineWidgetSupport in Frameworks */ = {isa = PBXBuildFile; productRef = EA8AAD9E783AB728FB40AE35 /* DeadlineWidgetSupport */; };
@@ -105,6 +113,7 @@
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		33CC10F72044A3C60003C045 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Runner/Info.plist; sourceTree = "<group>"; };
 		33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };
+		CC4F9E112E6A10010000A102 /* MacosNativeControlsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacosNativeControlsPlugin.swift; sourceTree = "<group>"; };
 		33CEB47222A05771004F2AC0 /* Flutter-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Debug.xcconfig"; sourceTree = "<group>"; };
 		33CEB47422A05771004F2AC0 /* Flutter-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Release.xcconfig"; sourceTree = "<group>"; };
 		33CEB47722A0578A004F2AC0 /* Flutter-Generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = "Flutter-Generated.xcconfig"; path = "ephemeral/Flutter-Generated.xcconfig"; sourceTree = "<group>"; };
@@ -114,6 +123,13 @@
 		49D9B073CC80F320BC796DAB /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		4BDFBC3AA3E36A069BAEFBF3 /* Pods-RunnerTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.release.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.release.xcconfig"; sourceTree = "<group>"; };
 		66AD48055E9A7BAD61A99E6C /* DeadlineWidgetBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeadlineWidgetBridge.swift; path = Bridge/DeadlineWidgetBridge.swift; sourceTree = "<group>"; };
+		TPW200000000000000000101 /* HomeWidgetsBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HomeWidgetsBridge.swift; path = Bridge/HomeWidgetsBridge.swift; sourceTree = "<group>"; };
+		TPW200000000000000000102 /* TechPieWidgetTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TechPieWidgetTheme.swift; path = UI/TechPieWidgetTheme.swift; sourceTree = "<group>"; };
+		TPW200000000000000000103 /* WidgetAppIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WidgetAppIntents.swift; path = UI/WidgetAppIntents.swift; sourceTree = "<group>"; };
+		TPW200000000000000000104 /* EcardPayWidgetShared.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EcardPayWidgetShared.swift; path = UI/EcardPayWidgetShared.swift; sourceTree = "<group>"; };
+		TPW200000000000000000105 /* ScheduleWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ScheduleWidget.swift; path = UI/ScheduleWidget.swift; sourceTree = "<group>"; };
+		TPW200000000000000000106 /* TodayOverviewWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TodayOverviewWidget.swift; path = UI/TodayOverviewWidget.swift; sourceTree = "<group>"; };
+		TPW200000000000000000108 /* card-bottom.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "card-bottom.png"; path = "../assets/campus_card/images/card-bottom.png"; sourceTree = SOURCE_ROOT; };
 		A716AD2026B149D994791952 /* DeadlineReminderBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeadlineReminderBridge.swift; path = ../apple/DeadlineReminders/DeadlineReminderBridge.swift; sourceTree = SOURCE_ROOT; };
 		753B8FACAE9206A8DB283EB9 /* Pods-RunnerTests.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-RunnerTests.profile.xcconfig"; path = "Target Support Files/Pods-RunnerTests/Pods-RunnerTests.profile.xcconfig"; sourceTree = "<group>"; };
 		7AFA3C8E1D35360C0083082E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
@@ -243,6 +259,7 @@
 			children = (
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
+				CC4F9E112E6A10010000A102 /* MacosNativeControlsPlugin.swift */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
@@ -257,6 +274,7 @@
 				A6ADA0E488021C2BD364CFC0 /* DeadlineWidgets.swift */,
 				B097C32648064C12632DBE9B /* Info.plist */,
 				F905C366880E6924E950D5D8 /* DeadlineWidgets.entitlements */,
+				TPW200000000000000000108 /* card-bottom.png */,
 			);
 			name = DeadlineWidgets;
 			path = DeadlineWidgets;
@@ -266,6 +284,12 @@
 			isa = PBXGroup;
 			children = (
 				66AD48055E9A7BAD61A99E6C /* DeadlineWidgetBridge.swift */,
+				TPW200000000000000000101 /* HomeWidgetsBridge.swift */,
+				TPW200000000000000000102 /* TechPieWidgetTheme.swift */,
+				TPW200000000000000000103 /* WidgetAppIntents.swift */,
+				TPW200000000000000000104 /* EcardPayWidgetShared.swift */,
+				TPW200000000000000000105 /* ScheduleWidget.swift */,
+				TPW200000000000000000106 /* TodayOverviewWidget.swift */,
 				FF1C5A3900238226A31054A6 /* DeadlineWidget.swift */,
 				87B968DA25A33B553B2B5106 /* DeadlineWidgetView.swift */,
 				C77EC04E640BA4A10EBE77DB /* Localizable.strings */,
@@ -444,6 +468,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				58D1648CBE28C49F4066E59A /* Localizable.strings in Resources */,
+				TPW200000000000000000208 /* card-bottom.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -568,7 +593,9 @@
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 				6B21A0E93BEBF45D6366636C /* DeadlineWidgetBridge.swift in Sources */,
+				TPW200000000000000000201 /* HomeWidgetsBridge.swift in Sources */,
 				A716AD2026B149D994791951 /* DeadlineReminderBridge.swift in Sources */,
+				CC4F9E102E6A10010000A101 /* MacosNativeControlsPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -577,6 +604,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				1EC3AC2C169D95C186CA2EF7 /* DeadlineWidgets.swift in Sources */,
+				TPW200000000000000000202 /* TechPieWidgetTheme.swift in Sources */,
+				TPW200000000000000000203 /* WidgetAppIntents.swift in Sources */,
+				TPW200000000000000000204 /* EcardPayWidgetShared.swift in Sources */,
+				TPW200000000000000000205 /* ScheduleWidget.swift in Sources */,
+				TPW200000000000000000206 /* TodayOverviewWidget.swift in Sources */,
 				863151EA9960F4B362BE6576 /* DeadlineWidget.swift in Sources */,
 				A61691F543558F2A6CC70848 /* DeadlineWidgetView.swift in Sources */,
 			);

@@ -24,6 +24,8 @@ import club.geekpie.techpie.island.IslandBridge
 import club.geekpie.techpie.island.IslandCapabilityProbe
 import club.geekpie.techpie.island.IslandNotificationFactory
 import club.geekpie.techpie.notification.SpendingNotificationBridge
+import club.geekpie.techpie.widgets.DeadlineWidgetsBridge
+import club.geekpie.techpie.widgets.HomeWidgetsBridge
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -39,6 +41,8 @@ class MainActivity : FlutterActivity() {
     private var pendingVpnConsent: PendingVpnConsent? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var ecardWidgets: EcardWidgetBridge? = null
+    private var deadlineWidgets: DeadlineWidgetsBridge? = null
+    private var homeWidgets: HomeWidgetsBridge? = null
     private var ecardFeedback: EcardFeedback? = null
     private var wearEngine: WearEngineBridge? = null
     private var islandBridge: IslandBridge? = null
@@ -47,6 +51,12 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         ecardWidgets = EcardWidgetBridge(this, flutterEngine.dartExecutor.binaryMessenger).also {
+            it.capture(intent, notifyFlutter = false)
+        }
+        deadlineWidgets = DeadlineWidgetsBridge(this, flutterEngine.dartExecutor.binaryMessenger).also {
+            it.capture(intent, notifyFlutter = false)
+        }
+        homeWidgets = HomeWidgetsBridge(this, flutterEngine.dartExecutor.binaryMessenger).also {
             it.capture(intent, notifyFlutter = false)
         }
         ecardFeedback = EcardFeedback(this, flutterEngine.dartExecutor.binaryMessenger)
@@ -105,6 +115,8 @@ class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         ecardWidgets?.capture(intent, notifyFlutter = true)
+        deadlineWidgets?.capture(intent, notifyFlutter = true)
+        homeWidgets?.capture(intent, notifyFlutter = true)
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -114,6 +126,10 @@ class MainActivity : FlutterActivity() {
         }
         ecardWidgets?.dispose()
         ecardWidgets = null
+        deadlineWidgets?.dispose()
+        deadlineWidgets = null
+        homeWidgets?.dispose()
+        homeWidgets = null
         ecardFeedback?.dispose()
         ecardFeedback = null
         wearEngine?.dispose()

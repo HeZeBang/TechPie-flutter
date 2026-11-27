@@ -21,6 +21,8 @@ import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_popup_menu_button.dart';
+import '../widgets/adaptive_progress_indicator.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
@@ -464,8 +466,9 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
               ),
             )
           else
-            PopupMenuButton<String>(
-              icon: const Icon(TpIcons.more),
+            AdaptivePopupMenuButton<String>(
+              icon: TpIcons.more,
+              sfSymbol: 'ellipsis',
               tooltip: '更多操作',
               onSelected: (v) {
                 switch (v) {
@@ -488,49 +491,37 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                     );
                 }
               },
-              itemBuilder: (_) => [
-                CheckedPopupMenuItem(
+              items: [
+                AdaptivePopupMenuItem<String>(
                   value: 'toggleAssignments',
+                  label: '显示作业',
                   checked: _showAssignments,
-                  child: const Text('显示作业'),
                 ),
-                CheckedPopupMenuItem(
+                AdaptivePopupMenuItem<String>(
                   value: 'toggleExams',
+                  label: '显示考试',
                   checked: _showExams,
-                  child: const Text('显示考试'),
                 ),
-                const PopupMenuDivider(),
-                const PopupMenuItem(
+                const AdaptivePopupMenuItem<String>.divider(),
+                const AdaptivePopupMenuItem<String>(
                   value: 'addDeadline',
-                  child: Row(
-                    children: [
-                      Icon(TpIcons.add, size: TpTokens.iconM),
-                      SizedBox(width: TpTokens.space3),
-                      Text('添加 Deadline'),
-                    ],
-                  ),
+                  label: '添加 Deadline',
+                  icon: TpIcons.add,
+                  sfSymbol: 'plus',
                 ),
                 if (reminders != null)
-                  PopupMenuItem(
+                  AdaptivePopupMenuItem<String>(
                     value: 'manageReminders',
+                    label: '添加到提醒事项',
+                    icon: TpIcons.checkCircle,
+                    sfSymbol: 'checklist',
                     enabled: canManageReminders,
-                    child: const Row(
-                      children: [
-                        Icon(TpIcons.checkCircle, size: TpTokens.iconM),
-                        SizedBox(width: TpTokens.space3),
-                        Text('添加到提醒事项'),
-                      ],
-                    ),
                   ),
-                PopupMenuItem(
+                AdaptivePopupMenuItem<String>(
                   value: 'hidden',
-                  child: Row(
-                    children: [
-                      const Icon(TpIcons.eyeOff, size: TpTokens.iconM),
-                      const SizedBox(width: TpTokens.space3),
-                      Text('查看已忽略 (${service.overrides.hidden.length})'),
-                    ],
-                  ),
+                  label: '查看已忽略 (${service.overrides.hidden.length})',
+                  icon: TpIcons.eyeOff,
+                  sfSymbol: 'eye.slash',
                 ),
               ],
             ),
@@ -1507,13 +1498,10 @@ class _PlatformErrorsBannerState extends State<_PlatformErrorsBanner> {
                       ),
                       IconButton(
                         icon: _retrying.contains(entry.key)
-                            ? SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: colors.dangerRed,
-                                ),
+                            ? AdaptiveActivityIndicator(
+                                size: 16,
+                                strokeWidth: 2,
+                                color: colors.dangerRed,
                               )
                             : const Icon(TpIcons.refresh, size: TpTokens.iconS),
                         onPressed: _retrying.contains(entry.key)
@@ -1692,7 +1680,7 @@ class _AssignmentRowState extends State<_AssignmentRow> {
       if (isPast || isLateWindow || isExamInProgress) return colors.dangerRed;
       if (hoursLeft < 24) return colors.dangerRed;
       if (hoursLeft < 72) return colors.warningAmber;
-      return colors.infoBlue;
+      return colors.textPrimary.withValues(alpha: colors.isDark ? 0.30 : 0.28);
     }();
     final Color countdownColor = isCalm ? colors.textMuted : urgencyColor;
 

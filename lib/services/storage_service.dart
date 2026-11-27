@@ -56,9 +56,14 @@ class StorageService {
   final FlutterSecureStorage _secure;
   final SharedPreferences _prefs;
 
-  StorageService(this._prefs) : _secure = appSecureStorage;
+  StorageService(this._prefs)
+      : _secure = appSecureStorage,
+        hideCampusCardBalanceNotifier = ValueNotifier<bool>(
+          _prefs.getBool(_hideCampusCardBalanceKey) ?? false,
+        );
 
   final ValueNotifier<int> pinnedQuickFeaturesVersion = ValueNotifier<int>(0);
+  final ValueNotifier<bool> hideCampusCardBalanceNotifier;
 
   String? get campusWebOwner => _prefs.getString('campus_web_owner');
   Future<void> setCampusWebOwner(String owner) => _prefs.setString('campus_web_owner', owner);
@@ -333,8 +338,10 @@ class StorageService {
 
   bool get hideCampusCardBalance =>
       _prefs.getBool(_hideCampusCardBalanceKey) ?? false;
-  Future<void> setHideCampusCardBalance(bool value) =>
-      _prefs.setBool(_hideCampusCardBalanceKey, value);
+  Future<void> setHideCampusCardBalance(bool value) async {
+    await _prefs.setBool(_hideCampusCardBalanceKey, value);
+    hideCampusCardBalanceNotifier.value = value;
+  }
 
   bool get desktopSidebarCollapsed =>
       _prefs.getBool(_desktopSidebarCollapsedKey) ?? false;

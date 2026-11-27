@@ -2,12 +2,39 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+/// Category buckets for organizing widgets inside the Home Widget Gallery.
+enum HomeWidgetGroup {
+  core('核心主页'),
+  academics('学业与课程'),
+  life('日常办事'),
+  activities('活动与岗位'),
+  special('专项事务');
+
+  const HomeWidgetGroup(this.label);
+
+  final String label;
+}
+
 /// Supported customizable widgets on the Home dashboard.
 enum HomeWidgetId {
   campusCard('campus_card'),
   todayCourses('today_courses'),
   deadlines('deadlines'),
-  quickActions('quick_actions');
+  quickActions('quick_actions'),
+  campusGrades('campus_grades'),
+  campusStudyPlan('campus_study_plan'),
+  campusBlackboard('campus_blackboard'),
+  campusElrcRecordings('campus_elrc_recordings'),
+  campusEcourse('campus_ecourse'),
+  campusCourseCatalog('campus_course_catalog'),
+  campusCertificates('campus_certificates'),
+  campusOaGym('campus_oa_gym'),
+  campusStudentLeave('campus_student_leave'),
+  campusHolidayTravel('campus_holiday_travel'),
+  campusActivities('campus_egate_xshd'),
+  campusJobs('campus_jobs'),
+  campusStudentAllowance('campus_student_allowance'),
+  campusPnpMinor('campus_pnp_minor');
 
   const HomeWidgetId(this.key);
 
@@ -55,12 +82,18 @@ class HomeWidgetMeta {
     required this.title,
     required this.subtitle,
     required this.defaultDesktopColumn,
+    required this.group,
+    this.featureId,
+    this.keywords = const [],
   });
 
   final HomeWidgetId id;
   final String title;
   final String subtitle;
   final HomeBentoColumn defaultDesktopColumn;
+  final HomeWidgetGroup group;
+  final String? featureId;
+  final List<String> keywords;
 }
 
 const Map<HomeWidgetId, HomeWidgetMeta> homeWidgetCatalog = {
@@ -69,24 +102,159 @@ const Map<HomeWidgetId, HomeWidgetMeta> homeWidgetCatalog = {
     title: '校园卡',
     subtitle: '余额展示与付款码快捷入口',
     defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.core,
+    featureId: 'campus_card',
+    keywords: ['ecard', 'xiaoyuanka', '付款码', '钱包'],
   ),
   HomeWidgetId.todayCourses: HomeWidgetMeta(
     id: HomeWidgetId.todayCourses,
     title: '今日课程',
     subtitle: '当天课表进度、教室与教师信息',
     defaultDesktopColumn: HomeBentoColumn.primary,
+    group: HomeWidgetGroup.core,
+    keywords: ['课表', 'schedule', '课程'],
   ),
   HomeWidgetId.deadlines: HomeWidgetMeta(
     id: HomeWidgetId.deadlines,
     title: '待办截止',
     subtitle: '近期作业、自定义事项与考试倒计时',
     defaultDesktopColumn: HomeBentoColumn.primary,
+    group: HomeWidgetGroup.core,
+    keywords: ['ddl', 'deadlines', '作业', '考试'],
   ),
   HomeWidgetId.quickActions: HomeWidgetMeta(
     id: HomeWidgetId.quickActions,
     title: '快捷入口',
     subtitle: '常用校园服务与工具固定入口',
     defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.core,
+    keywords: ['quick', 'shortcut', '工具'],
+  ),
+  HomeWidgetId.campusGrades: HomeWidgetMeta(
+    id: HomeWidgetId.campusGrades,
+    title: '成绩与 GPA',
+    subtitle: '总绩点、已获学分与近期课程成绩概览',
+    defaultDesktopColumn: HomeBentoColumn.primary,
+    group: HomeWidgetGroup.academics,
+    featureId: 'grades',
+    keywords: ['gpa', '绩点', '成绩', 'chengji'],
+  ),
+  HomeWidgetId.campusStudyPlan: HomeWidgetMeta(
+    id: HomeWidgetId.campusStudyPlan,
+    title: '培养计划',
+    subtitle: '修读学分进度与分类达标状态',
+    defaultDesktopColumn: HomeBentoColumn.primary,
+    group: HomeWidgetGroup.academics,
+    featureId: 'study_plan',
+    keywords: ['培养计划', '培养方案', '学分', 'study plan', 'peiyang'],
+  ),
+  HomeWidgetId.campusBlackboard: HomeWidgetMeta(
+    id: HomeWidgetId.campusBlackboard,
+    title: 'Blackboard 课程',
+    subtitle: '最新学期课程直达与最新公告速览',
+    defaultDesktopColumn: HomeBentoColumn.primary,
+    group: HomeWidgetGroup.academics,
+    featureId: 'blackboard',
+    keywords: ['blackboard', 'bb', 'elearning', '课件', '公告'],
+  ),
+  HomeWidgetId.campusElrcRecordings: HomeWidgetMeta(
+    id: HomeWidgetId.campusElrcRecordings,
+    title: '课程录播',
+    subtitle: 'ELRC 账号状态与今日课程录播快捷入口',
+    defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.academics,
+    featureId: 'elrc_recordings',
+    keywords: ['elrc', 'recordings', 'lubo', '回放', '录播'],
+  ),
+  HomeWidgetId.campusEcourse: HomeWidgetMeta(
+    id: HomeWidgetId.campusEcourse,
+    title: 'E云课堂',
+    subtitle: '免密直达 E云课堂查看课程内容',
+    defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.academics,
+    featureId: 'ecourse',
+    keywords: ['ecourse', 'classroom', 'yunketang', '云课堂'],
+  ),
+  HomeWidgetId.campusCourseCatalog: HomeWidgetMeta(
+    id: HomeWidgetId.campusCourseCatalog,
+    title: '本科课程目录',
+    subtitle: '近期搜索关键词与全校选课目录直达',
+    defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.academics,
+    featureId: 'course_catalog',
+    keywords: ['课程目录', '选课', 'catalog', '搜课', 'kecheng'],
+  ),
+  HomeWidgetId.campusCertificates: HomeWidgetMeta(
+    id: HomeWidgetId.campusCertificates,
+    title: '成绩单与证明',
+    subtitle: '成绩单、GPA 排名与证明申请记录概览',
+    defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.academics,
+    featureId: 'academic_certificates',
+    keywords: ['成绩单', '排名', '证明', 'transcript', 'certificate'],
+  ),
+  HomeWidgetId.campusOaGym: HomeWidgetMeta(
+    id: HomeWidgetId.campusOaGym,
+    title: '场馆预约',
+    subtitle: '体育场馆开放状态与各项目预约直达',
+    defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.life,
+    featureId: 'oa_gym',
+    keywords: ['gym', 'changguan', '体育', '羽毛球', '健身'],
+  ),
+  HomeWidgetId.campusStudentLeave: HomeWidgetMeta(
+    id: HomeWidgetId.campusStudentLeave,
+    title: '学生请假',
+    subtitle: '最近请假审批状态与申请历史速览',
+    defaultDesktopColumn: HomeBentoColumn.primary,
+    group: HomeWidgetGroup.life,
+    featureId: 'student_leave',
+    keywords: ['qingjia', 'leave', '请假'],
+  ),
+  HomeWidgetId.campusHolidayTravel: HomeWidgetMeta(
+    id: HomeWidgetId.campusHolidayTravel,
+    title: '节假日离返校',
+    subtitle: '最近假期去向登记与返校状态追踪',
+    defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.life,
+    featureId: 'holiday_travel',
+    keywords: ['节假日', '离校', '返校', 'travel', 'holiday'],
+  ),
+  HomeWidgetId.campusActivities: HomeWidgetMeta(
+    id: HomeWidgetId.campusActivities,
+    title: '学生活动',
+    subtitle: '近期活动签到记录与扫码签到入口',
+    defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.activities,
+    featureId: 'egate_xshd',
+    keywords: ['egate', 'huodong', '活动报名', '签到'],
+  ),
+  HomeWidgetId.campusJobs: HomeWidgetMeta(
+    id: HomeWidgetId.campusJobs,
+    title: '校园岗位',
+    subtitle: '助教与勤工助学开放岗位速览',
+    defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.activities,
+    featureId: 'campus_jobs',
+    keywords: ['勤工', '助教', '兼职', 'ta', 'job', '工资'],
+  ),
+  HomeWidgetId.campusStudentAllowance: HomeWidgetMeta(
+    id: HomeWidgetId.campusStudentAllowance,
+    title: '学生津贴',
+    subtitle: '近三个月补助实发金额按需查询',
+    defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.special,
+    featureId: 'student_allowance',
+    keywords: ['jintie', 'allowance', '补助', '津贴'],
+  ),
+  HomeWidgetId.campusPnpMinor: HomeWidgetMeta(
+    id: HomeWidgetId.campusPnpMinor,
+    title: 'P/NP 与辅修',
+    subtitle: 'P/NP 与辅修申请窗口及提交记录',
+    defaultDesktopColumn: HomeBentoColumn.secondary,
+    group: HomeWidgetGroup.special,
+    featureId: 'pnp_minor',
+    keywords: ['pnp', 'p/np', '辅修', 'minor', 'fuxiu'],
   ),
 };
 

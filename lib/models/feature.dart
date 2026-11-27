@@ -167,7 +167,7 @@ final featureEntries = <Feature>[
       context,
       builder: (_) => const ElearningHubPage(),
     ),
-    icon: const Icon(Icons.school_outlined),
+    icon: const Icon(TpIcons.graduation),
   ),
   Feature(
     id: 'campus_jobs',
@@ -177,7 +177,7 @@ final featureEntries = <Feature>[
     keywords: const ['勤工', '助教', '兼职', 'ta', 'job', 'qingong', 'zhujiao', '工资'],
     mode: FeatureMode.native,
     nativeEntry: (context) => pushAdaptivePage<void>(context, builder: (_) => const CampusJobsPage()),
-    icon: const Icon(Icons.work_outline),
+    icon: const Icon(TpIcons.briefcase),
   ),
   Feature(
     id: 'study_plan',
@@ -188,7 +188,7 @@ final featureEntries = <Feature>[
     mode: FeatureMode.native,
     nativeEntry: (context) =>
         pushAdaptivePage<void>(context, builder: (_) => const StudyPlanPage()),
-    icon: const Icon(Icons.account_tree_outlined),
+    icon: const Icon(TpIcons.studyPlan),
   ),
   Feature(
     id: 'student_allowance',
@@ -214,7 +214,7 @@ final featureEntries = <Feature>[
       context,
       builder: (_) => const HolidayTravelPage(),
     ),
-    icon: const Icon(Icons.luggage_outlined),
+    icon: const Icon(TpIcons.luggage),
   ),
   Feature(
     id: 'grades',
@@ -222,10 +222,9 @@ final featureEntries = <Feature>[
     description: '成绩与 GPA',
     subtitle: '查询课程、英语成绩与试算绩点',
     keywords: const ['绩点', '成绩', 'gpa', 'chengji'],
-    pinnedByDefault: true,
     mode: FeatureMode.native,
     nativeEntry: (context) => pushAdaptivePage<void>(context, builder: (_) => const GradesPage()),
-    icon: const Icon(Icons.school_outlined),
+    icon: const Icon(TpIcons.trophy),
   ),
   Feature(
     id: 'course_catalog',
@@ -235,7 +234,7 @@ final featureEntries = <Feature>[
     keywords: const ['课程目录', '选课', 'catalog', 'course', '搜课', 'kecheng'],
     mode: FeatureMode.native,
     nativeEntry: (context) => pushAdaptivePage<void>(context, builder: (_) => const CourseCatalogSearchPage()),
-    icon: const Icon(Icons.menu_book_outlined),
+    icon: const Icon(TpIcons.course),
   ),
   Feature(
     id: 'pnp_minor',
@@ -245,7 +244,7 @@ final featureEntries = <Feature>[
     keywords: const ['pnp', 'p/np', '辅修', 'minor', 'fuxiu', '二专'],
     mode: FeatureMode.native,
     nativeEntry: (context) => pushAdaptivePage<void>(context, builder: (_) => const PnpMinorPage()),
-    icon: const Icon(Icons.school_outlined),
+    icon: const Icon(TpIcons.pnpMinor),
   ),
   Feature(
     id: 'academic_certificates',
@@ -256,7 +255,7 @@ final featureEntries = <Feature>[
     mode: FeatureMode.native,
     nativeEntry: (context) =>
         pushAdaptivePage<void>(context, builder: (_) => const AcademicCertificatesPage()),
-    icon: const Icon(Icons.description_outlined),
+    icon: const Icon(TpIcons.document),
   ),
 ];
 

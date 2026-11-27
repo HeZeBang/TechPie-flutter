@@ -10,8 +10,20 @@ import '../services/campus/campus_errors.dart';
 import '../services/campus/campus_file_share.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
+import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_progress_indicator.dart';
+import '../widgets/adaptive_segmented_control.dart';
+import '../widgets/adaptive_select.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
+import '../widgets/blurred_app_bar.dart';
+import '../widgets/campus_prerequisite_view.dart';
+import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/page_refresh.dart';
 import 'generic_webview_page.dart';
 
 typedef CertificateFileShareFn = Future<CampusFileOpenResult> Function({
@@ -26,9 +38,39 @@ class AcademicCertificatesPage extends StatelessWidget {
   const AcademicCertificatesPage({super.key, this.service, this.onShareFile});
   final AcademicCertificateService? service;
   final CertificateFileShareFn? onShareFile;
+
   @override
   Widget build(BuildContext context) {
-    final s = service ?? ServiceProvider.of(context).certificates!;
+    final s = service ??
+        context
+            .dependOnInheritedWidgetOfExactType<ServiceProvider>()
+            ?.certificates;
+    if (s == null) {
+      return Scaffold(
+        backgroundColor: context.tpColors.canvas,
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: '成绩单与证明',
+            leadingItems: const [
+              IosNativeNavigationBarItem(
+                id: 'back',
+                title: '返回',
+                sfSymbol: 'chevron.left',
+                accessibilityLabel: '返回',
+                placementGroup: 'leading-main',
+              ),
+            ],
+            onItemPressed: (_) => unawaited(maybePopAdaptivePage<void>(context)),
+          ),
+          material: () => const BlurredAppBar(title: Text('成绩单与证明')),
+        ),
+        body: const CampusPrerequisiteView(
+          icon: TpIcons.document,
+          title: '成绩单与证明',
+          fallbackText: '请登录并绑定学校账号',
+        ),
+      );
+    }
     return ListenableBuilder(
       listenable: s,
       builder: (context, _) => _Certificates(
@@ -41,9 +83,15 @@ class AcademicCertificatesPage extends StatelessWidget {
 }
 
 class _Certificates extends StatefulWidget {
-  const _Certificates({super.key, required this.service, this.onShareFile});
+  const _Certificates({
+    super.key,
+    required this.service,
+    this.onShareFile,
+  });
+
   final AcademicCertificateService service;
   final CertificateFileShareFn? onShareFile;
+
   @override
   State<_Certificates> createState() => _CertificatesState();
 }
@@ -51,7 +99,9 @@ class _Certificates extends StatefulWidget {
 class _CertificatesState extends State<_Certificates> {
   var kind = CertificateKind.transcript;
   bool busy = false;
+  String? _activeDownloadKey;
   String? error;
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +132,7 @@ class _CertificatesState extends State<_Certificates> {
   }
 
   Future<void> refresh() => run(() => widget.service.refresh(kind));
+
   void web() => pushAdaptivePage<void>(
         context,
         builder: (_) => GenericWebViewPage(
@@ -102,11 +153,13 @@ class _CertificatesState extends State<_Certificates> {
     if (form == null || !mounted || generation != s.generation) return;
     final values = await showDialog<Map<String, String>>(
       context: context,
-      builder: (context) => _FormDialog(form: form, kind: kind, service: s, generation: generation),
+      builder: (context) =>
+          _FormDialog(form: form, kind: kind, service: s, generation: generation),
     );
     if (!mounted || values == null || generation != s.generation) return;
+    final submitted = form.values(values);
     final summary = form.fields.map((f) {
-      final v = values[f.name] ?? f.value;
+      final v = f.readOnly ? f.value : (submitted[f.name] ?? f.value);
       return '${f.label} · ${f.options[v] ?? v}';
     }).join('\n');
     final accepted = await showAdaptiveAlertDialog<bool>(
@@ -115,14 +168,18 @@ class _CertificatesState extends State<_Certificates> {
       message: summary,
       actions: const [
         AdaptiveAlertAction(label: '取消', value: false),
-        AdaptiveAlertAction(label: '确认提交', value: true),
+        AdaptiveAlertAction(label: '确认提交', value: true, isDefault: true),
       ],
     );
     if (!mounted || accepted != true || generation != s.generation) return;
     await run(() async {
-      final result = await s.apply(kind, form, values);
+      final result = await s.apply(kind, form, submitted);
       if (!mounted || generation != s.generation) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result)));
+      showAdaptiveFeedback(
+        context: context,
+        message: result,
+        style: AdaptiveFeedbackStyle.success,
+      );
       await s.refresh(kind);
     });
   }
@@ -132,122 +189,269 @@ class _CertificatesState extends State<_Certificates> {
       (defaultTargetPlatform == TargetPlatform.android ||
           defaultTargetPlatform == TargetPlatform.iOS);
 
-  Future<void> present(CertificateDownload download, {bool share = false}) => run(() async {
-        final service = widget.service;
-        final generation = service.generation;
-        bool current() => mounted && service.generation == generation;
-        final bytes = await service.pdf(download);
-        if (!current()) return;
-        final result = await (widget.onShareFile ?? CampusFileShare.openOrShare)(
-          scope: 'certificates',
-          filename: 'certificate-${kind.name}.pdf',
-          bytes: bytes,
-          mimeType: 'application/pdf',
-          preferShare: share,
-        );
-        if (mounted && current() && !result.succeeded && result.path != null) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text('已保存到 ${result.path}')));
+  Future<void> present(
+    CertificateDownload download, {
+    required String keyId,
+    required String filename,
+    bool share = false,
+  }) =>
+      run(() async {
+        setState(() => _activeDownloadKey = keyId);
+        try {
+          final service = widget.service;
+          final generation = service.generation;
+          bool current() => mounted && service.generation == generation;
+          final bytes = await service.pdf(download);
+          if (!current()) return;
+          final result =
+              await (widget.onShareFile ?? CampusFileShare.openOrShare)(
+            scope: 'certificates',
+            filename: filename,
+            bytes: bytes,
+            mimeType: 'application/pdf',
+            preferShare: share,
+          );
+          if (mounted && current() && !result.succeeded && result.path != null) {
+            showAdaptiveFeedback(
+              context: context,
+              message: '已保存到 ${result.path}',
+              style: AdaptiveFeedbackStyle.success,
+            );
+          }
+        } finally {
+          if (mounted) setState(() => _activeDownloadKey = null);
         }
       });
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tpColors;
     final s = widget.service;
     final rows = s.records[kind];
     final native = s.canApply(kind);
+    final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(context);
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('成绩单与证明'),
-        actions: [
-          IconButton(
-            tooltip: '在 EAMS 网页中办理',
-            icon: const Icon(Icons.open_in_new),
-            onPressed: s.ready ? web : null,
-          ),
-          IconButton(
-            tooltip: '刷新记录',
-            icon: const Icon(Icons.refresh),
-            onPressed: busy || !s.ready ? null : refresh,
-          ),
-        ],
+      backgroundColor: colors.canvas,
+      extendBodyBehindAppBar:
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: '成绩单与证明',
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
+            ),
+          ],
+          trailingItems: [
+            IosNativeNavigationBarItem(
+              id: 'web',
+              sfSymbol: 'safari',
+              accessibilityLabel: '在 EAMS 网页中办理',
+              enabled: s.ready,
+              placementGroup: 'trailing-main',
+            ),
+            IosNativeNavigationBarItem(
+              id: 'refresh',
+              sfSymbol: 'arrow.clockwise',
+              accessibilityLabel: '刷新记录',
+              enabled: !busy && s.ready,
+              placementGroup: 'trailing-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            switch (id) {
+              case 'back':
+                unawaited(maybePopAdaptivePage<void>(context));
+              case 'web':
+                web();
+              case 'refresh':
+                unawaited(refresh());
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: const Text('成绩单与证明'),
+          actions: [
+            IconButton(
+              tooltip: '在 EAMS 网页中办理',
+              icon: const Icon(TpIcons.externalLink),
+              onPressed: s.ready ? web : null,
+            ),
+            PageRefreshButton(
+              onRefresh: refresh,
+              enabled: s.ready,
+              refreshing: busy,
+            ),
+            if (!isDesktop())
+              IconButton(
+                tooltip: '刷新记录',
+                icon: const Icon(TpIcons.refresh),
+                onPressed: busy || !s.ready ? null : refresh,
+              ),
+          ],
+        ),
       ),
       body: !s.ready
-          ? const Center(child: Text('请登录并绑定学校账号'))
-          : Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 820),
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Wrap(
-                      spacing: 8,
+          ? const CampusPrerequisiteView(
+              icon: TpIcons.document,
+              title: '成绩单与证明',
+              fallbackText: '请登录并绑定学校账号',
+            )
+          : PageRefreshIndicator(
+              onRefresh: refresh,
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                  TpTokens.pageHorizontalPadding,
+                  topInset + TpTokens.space4,
+                  TpTokens.pageHorizontalPadding,
+                  AppShellMetrics.bottomContentPaddingOf(context),
+                ),
+                children: [
+                  TpPageBody(
+                    maxWidth: 880,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        for (final k in CertificateKind.values)
-                          ChoiceChip(
-                            label: Text(k.label),
-                            selected: k == kind,
-                            onSelected: busy
+                        AdaptiveSegmentedControl(
+                          value: CertificateKind.values.indexOf(kind),
+                          segments: [
+                            for (final k in CertificateKind.values) k.label,
+                          ],
+                          enabled: !busy,
+                          onChanged: (idx) {
+                            final next = CertificateKind.values[idx];
+                            if (next == kind) return;
+                            setState(() => kind = next);
+                            unawaited(refresh());
+                          },
+                        ),
+                        if (busy && _activeDownloadKey == null) ...[
+                          const SizedBox(height: TpTokens.space2),
+                          const LinearProgressIndicator(),
+                        ],
+                        if (error != null) ...[
+                          const SizedBox(height: TpTokens.space3),
+                          TpStateCard.error(
+                            title: '操作失败',
+                            message: error,
+                            compact: true,
+                            onPrimaryAction: refresh,
+                          ),
+                        ],
+                        const SizedBox(height: TpTokens.space3),
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: FilledButton.icon(
+                            icon: Icon(
+                              native ? TpIcons.add : TpIcons.externalLink,
+                            ),
+                            onPressed: busy
                                 ? null
-                                : (v) {
-                                    if (!v) return;
-                                    setState(() => kind = k);
-                                    unawaited(refresh());
-                                  },
+                                : native
+                                    ? apply
+                                    : web,
+                            label: Text(native ? '新申请' : '在 EAMS 网页中办理'),
+                          ),
+                        ),
+                        const SizedBox(height: TpTokens.space3),
+                        if (rows != null && rows.isEmpty)
+                          const TpStateCard.empty(
+                            icon: TpIcons.document,
+                            title: '暂无申请记录',
+                            compact: true,
+                          ),
+                        for (var rIdx = 0; rIdx < (rows?.length ?? 0); rIdx++)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                              bottom: TpTokens.space3,
+                            ),
+                            child: TpCard(
+                              padding: const EdgeInsets.all(TpTokens.space4),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  for (final field
+                                      in rows![rIdx].fields.entries)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                        bottom: TpTokens.space1,
+                                      ),
+                                      child: Text(
+                                        '${field.key} · ${field.value}',
+                                        style: TpTypography.itemTitle(colors)
+                                            .copyWith(fontSize: 14),
+                                      ),
+                                    ),
+                                  for (var dIdx = 0;
+                                      dIdx < rows[rIdx].downloads.length;
+                                      dIdx++)
+                                    Builder(
+                                      builder: (context) {
+                                        final download =
+                                            rows[rIdx].downloads[dIdx];
+                                        final keyId = '$rIdx:$dIdx:${download.url}';
+                                        final filename =
+                                            rows[rIdx].downloads.length == 1
+                                                ? 'certificate-${kind.name}.pdf'
+                                                : 'certificate-${kind.name}-${dIdx + 1}.pdf';
+                                        final downloading =
+                                            _activeDownloadKey == keyId;
+                                        return Wrap(
+                                          spacing: TpTokens.space1,
+                                          crossAxisAlignment:
+                                              WrapCrossAlignment.center,
+                                          children: [
+                                            TextButton.icon(
+                                              icon: downloading
+                                                  ? const AdaptiveActivityIndicator(
+                                                      size: 16,
+                                                      strokeWidth: 2,
+                                                    )
+                                                  : const Icon(
+                                                      TpIcons.document,
+                                                    ),
+                                              label: Text(download.label),
+                                              onPressed: busy
+                                                  ? null
+                                                  : () => present(
+                                                        download,
+                                                        keyId: keyId,
+                                                        filename: filename,
+                                                      ),
+                                            ),
+                                            if (_canShareCertificate)
+                                              IconButton(
+                                                tooltip:
+                                                    '分享${download.label}',
+                                                icon:
+                                                    const Icon(TpIcons.share),
+                                                onPressed: busy
+                                                    ? null
+                                                    : () => present(
+                                                          download,
+                                                          keyId: keyId,
+                                                          filename: filename,
+                                                          share: true,
+                                                        ),
+                                              ),
+                                          ],
+                                        );
+                                      },
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
                       ],
                     ),
-                    if (busy) const LinearProgressIndicator(),
-                    if (error != null)
-                      ListTile(
-                        title: Text(error!),
-                        trailing: TextButton(onPressed: refresh, child: const Text('重试')),
-                      ),
-                    Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: FilledButton.icon(
-                        icon: Icon(native ? Icons.add : Icons.open_in_new),
-                        onPressed: busy
-                            ? null
-                            : native
-                                ? apply
-                                : web,
-                        label: Text(native ? '新申请' : '在 EAMS 网页中办理'),
-                      ),
-                    ),
-                    if (rows != null && rows.isEmpty) const ListTile(title: Text('暂无申请记录')),
-                    for (final row in rows ?? <AcademicCertificate>[])
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              for (final field in row.fields.entries)
-                                Text('${field.key} · ${field.value}'),
-                              for (final download in row.downloads)
-                                Wrap(
-                                  children: [
-                                    TextButton.icon(
-                                      icon: const Icon(Icons.picture_as_pdf_outlined),
-                                      label: Text(download.label),
-                                      onPressed: busy ? null : () => present(download),
-                                    ),
-                                    if (_canShareCertificate)
-                                      IconButton(
-                                        tooltip: '分享${download.label}',
-                                        icon: const Icon(Icons.share_outlined),
-                                        onPressed:
-                                            busy ? null : () => present(download, share: true),
-                                      ),
-                                  ],
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
     );
@@ -261,10 +465,12 @@ class _FormDialog extends StatefulWidget {
     required this.service,
     required this.generation,
   });
+
   final CertificateKind kind;
   final CertificateForm form;
   final AcademicCertificateService service;
   final int generation;
+
   @override
   State<_FormDialog> createState() => _FormDialogState();
 }
@@ -272,6 +478,7 @@ class _FormDialog extends StatefulWidget {
 class _FormDialogState extends State<_FormDialog> {
   final values = <String, String>{};
   String? error;
+
   @override
   void initState() {
     super.initState();
@@ -279,7 +486,9 @@ class _FormDialogState extends State<_FormDialog> {
   }
 
   void accountChanged() {
-    if (widget.generation != widget.service.generation && mounted) Navigator.of(context).pop();
+    if (widget.generation != widget.service.generation && mounted) {
+      Navigator.of(context).pop();
+    }
   }
 
   @override
@@ -302,26 +511,41 @@ class _FormDialogState extends State<_FormDialog> {
                       ? TextFormField(
                           initialValue: field.value,
                           readOnly: field.readOnly,
+                          enabled: !field.readOnly,
                           minLines: field.multiline ? 3 : 1,
                           maxLines: field.multiline ? 6 : 1,
                           decoration: InputDecoration(labelText: field.label),
-                          onChanged: (v) {
-                            values[field.name] = v;
-                            if (error != null) setState(() => error = null);
-                          },
+                          onChanged: field.readOnly
+                              ? null
+                              : (v) {
+                                  values[field.name] = v;
+                                  if (error != null) {
+                                    setState(() => error = null);
+                                  }
+                                },
                         )
-                      : DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          initialValue:
-                              field.options.containsKey(field.value) ? field.value : null,
-                          decoration: InputDecoration(labelText: field.label),
-                          items: [
+                      : AdaptiveSelect(
+                          label: field.label,
+                          width: double.infinity,
+                          enabled: !field.readOnly,
+                          value: field.options.containsKey(
+                                  values[field.name] ?? field.value,
+                                )
+                              ? (values[field.name] ?? field.value)
+                              : null,
+                          placeholder: '请选择${field.label}',
+                          options: [
                             for (final opt in field.options.entries)
-                              DropdownMenuItem(value: opt.key, child: Text(opt.value)),
+                              AdaptiveSelectOption(
+                                value: opt.key,
+                                label: opt.value,
+                              ),
                           ],
                           onChanged: (v) {
-                            values[field.name] = v ?? '';
-                            if (error != null) setState(() => error = null);
+                            setState(() {
+                              values[field.name] = v;
+                              error = null;
+                            });
                           },
                         ),
                 ),
@@ -335,7 +559,10 @@ class _FormDialogState extends State<_FormDialog> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
           FilledButton(
             onPressed: () {
               try {

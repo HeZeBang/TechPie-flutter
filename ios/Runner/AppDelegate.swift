@@ -13,6 +13,7 @@ import WidgetKit
   private var watchBridge: WatchConnectivityBridge?
   private var flutterConfigured = false
   private let deadlineWidgetBridge = DeadlineWidgetBridge()
+  private let homeWidgetsBridge = HomeWidgetsBridge()
   private let deadlineReminderBridge = DeadlineReminderBridge()
 
   override func application(
@@ -22,6 +23,7 @@ import WidgetKit
     if let url = launchOptions?[.url] as? URL {
       _ = captureEcardPayURL(url, notifyFlutter: false)
       _ = deadlineWidgetBridge.capture(url)
+      _ = homeWidgetsBridge.capture(url)
     }
 
     let launched = super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -68,6 +70,7 @@ import WidgetKit
     ecardBindTunnel = EcardBindTunnelPlugin(messenger: registrar.messenger())
     watchBridge = WatchConnectivityBridge(registrar: registrar)
     deadlineWidgetBridge.configure(messenger: registrar.messenger())
+    homeWidgetsBridge.configure(messenger: registrar.messenger())
     deadlineReminderBridge.configure(messenger: registrar.messenger())
 
     let platformChannel = FlutterMethodChannel(
@@ -190,7 +193,10 @@ import WidgetKit
     open url: URL,
     options: [UIApplication.OpenURLOptionsKey: Any] = [:]
   ) -> Bool {
-    if deadlineWidgetBridge.capture(url) || captureEcardPayURL(url, notifyFlutter: true) {
+    if deadlineWidgetBridge.capture(url)
+      || homeWidgetsBridge.capture(url)
+      || captureEcardPayURL(url, notifyFlutter: true)
+    {
       return true
     }
     return super.application(app, open: url, options: options)

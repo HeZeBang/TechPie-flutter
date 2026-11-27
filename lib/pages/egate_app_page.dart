@@ -38,6 +38,12 @@ class _EgateAppPageState extends State<EgateAppPage> {
   String? _message;
   List<EgateAppSignRecord> _history = const [];
   bool _loadedOnce = false;
+  String? _loadedIdentity;
+
+  String _friendlyError(Object e, {String fallback = '操作失败，请重试'}) {
+    final text = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '').trim();
+    return text.isEmpty ? fallback : text;
+  }
 
   Future<void> _handlePrerequisite() async {
     final sp = ServiceProvider.of(context);
@@ -58,6 +64,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
   }
 
   Future<void> _refresh(EgateAppService service) async {
+    final requestIdentity = _loadedIdentity;
     setState(() {
       _loading = true;
       _error = null;
@@ -67,25 +74,28 @@ class _EgateAppPageState extends State<EgateAppPage> {
         service.fetchSignMessage(),
         service.fetchSignHistory(),
       ]);
-      if (!mounted) return;
+      if (!mounted || requestIdentity != _loadedIdentity) return;
       setState(() {
         _message = results[0] as String;
         _history = results[1] as List<EgateAppSignRecord>;
       });
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _error = e.toString());
+      if (!mounted || requestIdentity != _loadedIdentity) return;
+      setState(() => _error = _friendlyError(e, fallback: '加载校园签到失败，请重试'));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && requestIdentity == _loadedIdentity) {
+        setState(() => _loading = false);
+      }
     }
   }
 
   Future<void> _submitCheckin(EgateAppService service, String wid) async {
     if (_submitting) return;
+    final requestIdentity = _loadedIdentity;
     setState(() => _submitting = true);
     try {
       final result = await service.submitCheckin(wid);
-      if (!mounted) return;
+      if (!mounted || requestIdentity != _loadedIdentity) return;
       showAdaptiveFeedback(
         context: context,
         message: result.message,
@@ -93,10 +103,10 @@ class _EgateAppPageState extends State<EgateAppPage> {
       );
       unawaited(_refresh(service));
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestIdentity != _loadedIdentity) return;
       showAdaptiveFeedback(
         context: context,
-        message: '$e',
+        message: _friendlyError(e, fallback: '签到提交失败，请重试'),
         style: AdaptiveFeedbackStyle.error,
       );
     } finally {
@@ -228,6 +238,17 @@ class _EgateAppPageState extends State<EgateAppPage> {
         listenable: Listenable.merge([auth, tpAuth]),
         builder: (context, _) {
           final ready = auth.isLoggedIn && tpAuth.hasIdsBinding;
+          final identity = ready
+              ? '${auth.session?.userId ?? ''}|${tpAuth.idsStudentId}'
+              : null;
+          if (identity != _loadedIdentity) {
+            _loadedIdentity = identity;
+            _loadedOnce = false;
+            _message = null;
+            _history = const [];
+            _error = null;
+            _loading = false;
+          }
           if (!ready) {
             return ListView(
               padding: EdgeInsets.fromLTRB(

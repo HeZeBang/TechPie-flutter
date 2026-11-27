@@ -46,13 +46,22 @@ void showAdaptiveFeedback({
   String? actionLabel,
   VoidCallback? onAction,
 }) {
-  adaptiveFeedbackHostKey.currentState?.show(
-    message: message,
-    style: style,
-    duration: duration,
-    actionLabel: actionLabel,
-    onAction: onAction,
-  );
+  final host = adaptiveFeedbackHostKey.currentState;
+  if (host != null) {
+    host.show(
+      message: message,
+      style: style,
+      duration: duration,
+      actionLabel: actionLabel,
+      onAction: onAction,
+    );
+    return;
+  }
+  if (context != null && context.mounted) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(message), duration: duration),
+    );
+  }
 }
 
 /// Shows a modal alert on iOS or a transient feedback toast elsewhere.

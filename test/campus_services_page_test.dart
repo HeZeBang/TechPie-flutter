@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:techpie/models/feature.dart';
 import 'package:techpie/pages/campus_services_page.dart';
 import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/widgets/adaptive_checkbox.dart';
 
 Future<StorageService> openHub(WidgetTester tester, {double width = 390, bool dark = false}) async {
   tester.view.physicalSize = Size(width, 900);
@@ -81,7 +82,8 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    Finder checkbox(String title) => find.widgetWithText(CheckboxListTile, title);
+    Finder checkbox(String title) =>
+        find.widgetWithText(AdaptiveCheckboxRow, title);
     Future<void> toggle(String title) async {
       final tile = checkbox(title);
       await tester.ensureVisible(tile);
@@ -92,7 +94,10 @@ void main() {
 
     await edit();
     expect(find.text('已选 5/5'), findsOneWidget);
-    expect(tester.widget<CheckboxListTile>(checkbox('学生津贴')).onChanged, isNull);
+    expect(
+      tester.widget<AdaptiveCheckboxRow>(checkbox('学生津贴')).onChanged,
+      isNull,
+    );
     expect(checkbox('校园卡'), findsNothing);
     await toggle('学生请假');
     await toggle('学生津贴');
@@ -119,7 +124,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(storage.pinnedQuickFeatureIds, expected);
     await edit();
-    expect(tester.widget<CheckboxListTile>(checkbox('学生津贴')).value, isTrue);
+    expect(
+      tester.widget<AdaptiveCheckboxRow>(checkbox('学生津贴')).value,
+      isTrue,
+    );
     expect(tester.takeException(), isNull);
   });
 }

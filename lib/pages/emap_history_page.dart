@@ -7,12 +7,16 @@ import '../services/campus/campus_errors.dart';
 import '../services/campus/emap_account_cache.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
+import '../utils/platform.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/app_shell/app_shell_metrics.dart';
+import '../widgets/blurred_app_bar.dart';
+import '../widgets/campus_prerequisite_view.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
-import '../widgets/uni_auth_login.dart';
 import 'generic_webview_page.dart';
-import 'third_party_accounts_page.dart';
 
 /// Shared history and official-form navigation for the two EGATE registrations.
 class EmapHistoryPage extends StatelessWidget {
@@ -46,6 +50,7 @@ class EmapHistoryPage extends StatelessWidget {
 class _AccountHistory extends StatefulWidget {
   const _AccountHistory({super.key, required this.page});
   final EmapHistoryPage page;
+
   @override
   State<_AccountHistory> createState() => _AccountHistoryState();
 }
@@ -73,7 +78,9 @@ class _AccountHistoryState extends State<_AccountHistory> {
     try {
       await widget.page.refresh();
     } catch (e) {
-      if (mounted) error = e is CampusRequestException ? e.message : '读取学校记录失败';
+      if (mounted) {
+        error = e is CampusRequestException ? e.message : '读取学校记录失败';
+      }
     } finally {
       if (mounted) setState(() => busy = false);
     }
@@ -81,6 +88,7 @@ class _AccountHistoryState extends State<_AccountHistory> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tpColors;
     final page = widget.page;
     final ready = page.service.ready;
     final loaded = page.service.values.containsKey('history');
@@ -95,61 +103,113 @@ class _AccountHistoryState extends State<_AccountHistory> {
             cookieType: CookieType.egateApp,
           ),
         ),
-        icon: const Icon(Icons.open_in_new),
+        icon: const Icon(TpIcons.externalLink),
         label: Text(page.webLabel),
       ),
     );
     return Scaffold(
-      backgroundColor: context.tpColors.canvas,
-      appBar: AppBar(
-        title: Text(page.title),
-        actions: [PageRefreshButton(onRefresh: refresh, enabled: ready, refreshing: busy)],
-      ),
-      body: SafeArea(
-        child: !ready
-            ? Center(
-                child: FilledButton(
-                  onPressed: () async {
-                    if (!ServiceProvider.of(context).authService.isLoggedIn) {
-                      await startUniAuthLogin(context);
-                    } else {
-                      await pushAdaptivePage<void>(
-                        context,
-                        builder: (_) => const ThirdPartyAccountsPage(),
-                      );
-                    }
-                  },
-                  child: Text(page.service.identity().user == null ? '登录 TechPie' : '绑定 IDS 账号'),
-                ),
-              )
-            : PageRefreshIndicator(
-                onRefresh: refresh,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(TpTokens.space4),
-                  children: [
-                    TpPageBody(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          page.primaryAction?.call(schoolFormButton) ?? schoolFormButton,
-                          const SizedBox(height: TpTokens.sectionGap),
-                          if (busy) const LinearProgressIndicator(),
-                          if (error != null)
-                            ListTile(
-                              contentPadding: EdgeInsets.zero,
-                              title: Text(error!),
-                              subtitle: loaded ? const Text('显示上次读取的记录') : null,
-                              trailing: TextButton(onPressed: refresh, child: const Text('重试')),
-                            ),
-                          page.content(loaded),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+      backgroundColor: colors.canvas,
+      appBar: AdaptiveNavigationScaffold.adaptiveBar(
+        ios: () => IosNativeNavigationBar(
+          title: page.title,
+          leadingItems: const [
+            IosNativeNavigationBarItem(
+              id: 'back',
+              title: '返回',
+              sfSymbol: 'chevron.left',
+              accessibilityLabel: '返回',
+              placementGroup: 'leading-main',
+            ),
+          ],
+          trailingItems: [
+            IosNativeNavigationBarItem(
+              id: 'refresh',
+              sfSymbol: 'arrow.clockwise',
+              accessibilityLabel: '刷新',
+              enabled: !busy && ready,
+              placementGroup: 'trailing-main',
+            ),
+          ],
+          onItemPressed: (id) {
+            if (id == 'back') {
+              unawaited(maybePopAdaptivePage<void>(context));
+            } else if (id == 'refresh') {
+              unawaited(refresh());
+            }
+          },
+        ),
+        material: () => BlurredAppBar(
+          title: Text(page.title),
+          actions: [
+            PageRefreshButton(
+              onRefresh: refresh,
+              enabled: ready,
+              refreshing: busy,
+            ),
+            if (!isDesktop())
+              IconButton(
+                tooltip: '刷新',
+                icon: const Icon(TpIcons.refresh),
+                onPressed: busy || !ready ? null : refresh,
               ),
+          ],
+        ),
       ),
+      body: !ready
+          ? CampusPrerequisiteView(
+              icon: TpIcons.linkedAccounts,
+              title: page.title,
+              fallbackText: page.service.identity().user == null
+                  ? '请先登录 TechPie'
+                  : '需要绑定 IDS 账号',
+              isSignedIn: page.service.identity().user != null &&
+                  (context
+                          .dependOnInheritedWidgetOfExactType<ServiceProvider>()
+                          ?.authService
+                          .isLoggedIn ??
+                      true),
+            )
+          : PageRefreshIndicator(
+              onRefresh: refresh,
+              child: ListView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.fromLTRB(
+                  TpTokens.pageHorizontalPadding,
+                  TpTokens.space4,
+                  TpTokens.pageHorizontalPadding,
+                  AppShellMetrics.bottomContentPaddingOf(context),
+                ),
+                children: [
+                  TpPageBody(
+                    maxWidth: 880,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        page.primaryAction?.call(schoolFormButton) ??
+                            schoolFormButton,
+                        const SizedBox(height: TpTokens.sectionGap),
+                        if (busy) ...[
+                          const LinearProgressIndicator(),
+                          const SizedBox(height: TpTokens.space2),
+                        ],
+                        if (error != null) ...[
+                          TpStateCard.error(
+                            title: error!,
+                            message: loaded ? '当前显示上次读取的记录' : null,
+                            compact: true,
+                            onPrimaryAction: refresh,
+                          ),
+                          const SizedBox(height: TpTokens.space3),
+                        ],
+                        page.content(loaded),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }

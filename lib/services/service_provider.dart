@@ -14,6 +14,7 @@ import 'ecard_widget_service.dart';
 import 'egate_app_service.dart';
 import 'grade_service.dart';
 import 'holiday_travel_service.dart';
+import 'home_widgets_service.dart';
 import 'island_service.dart';
 import 'oa_gym_service.dart';
 import 'pnp_minor_service.dart';
@@ -58,6 +59,7 @@ class ServiceProvider extends InheritedWidget {
   final EcardWidgetService? ecardWidgetService;
   final WearEngineService? wearEngineService;
   final DeadlineWidgetService? deadlineWidgetService;
+  final HomeWidgetsService? homeWidgetsService;
   final DeadlineReminderService? deadlineReminderService;
   final SpendingAlertService? spendingAlertService;
   final HolidayTravelService? holidayTravelService;
@@ -91,6 +93,7 @@ class ServiceProvider extends InheritedWidget {
     this.ecardWidgetService,
     this.wearEngineService,
     this.deadlineWidgetService,
+    this.homeWidgetsService,
     this.deadlineReminderService,
     this.spendingAlertService,
     this.holidayTravelService,
@@ -135,6 +138,7 @@ class ServiceProvider extends InheritedWidget {
       ecardWidgetService != oldWidget.ecardWidgetService ||
       wearEngineService != oldWidget.wearEngineService ||
       deadlineWidgetService != oldWidget.deadlineWidgetService ||
+      homeWidgetsService != oldWidget.homeWidgetsService ||
       deadlineReminderService != oldWidget.deadlineReminderService ||
       spendingAlertService != oldWidget.spendingAlertService;
 }

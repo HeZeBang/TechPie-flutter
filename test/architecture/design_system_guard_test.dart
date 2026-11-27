@@ -38,96 +38,25 @@ enum DesignSystemRule {
 /// Material usage. Any migrated page MUST be removed immediately.
 const Map<String, Set<DesignSystemRule>> legacyMaterialTransitionPages =
     <String, Set<DesignSystemRule>>{
-  'lib/pages/academic_certificates_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.bareCard,
-    DesignSystemRule.materialIcons,
-    DesignSystemRule.rawSnackBar,
-  },
   'lib/pages/assignments_page.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/campus_card_account_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareCard,
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/campus_jobs_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/course_catalog_search_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
     DesignSystemRule.materialIcons,
   },
   'lib/pages/custom_course_editor_page.dart': <DesignSystemRule>{
     DesignSystemRule.materialIcons,
   },
-  'lib/pages/elearning_course_detail_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.materialIcons,
-    DesignSystemRule.rawSnackBar,
-  },
-  'lib/pages/elearning_hub_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/elrc_recordings_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-  },
-  'lib/pages/emap_history_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.materialIcons,
-  },
   'lib/pages/feedback_page.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/grades_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.bareCard,
     DesignSystemRule.materialIcons,
   },
   'lib/pages/hidden_assignments_page.dart': <DesignSystemRule>{
     DesignSystemRule.materialIcons,
   },
-  'lib/pages/holiday_travel_page.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/pnp_minor_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.bareCard,
-    DesignSystemRule.materialIcons,
-    DesignSystemRule.rawSnackBar,
-  },
   'lib/pages/schedule_page.dart': <DesignSystemRule>{
     DesignSystemRule.materialIcons,
-  },
-  'lib/pages/student_leave_application.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/student_leave_editor.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/student_leave_page.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-    DesignSystemRule.rawSnackBar,
-  },
-  'lib/pages/study_plan_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.bareCard,
-    DesignSystemRule.materialIcons,
-    DesignSystemRule.rawSnackBar,
   },
   'lib/pages/sync_settings_page.dart': <DesignSystemRule>{
     DesignSystemRule.materialIcons,
   },
   'lib/pages/third_party_accounts_page.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/widgets/gym/gym_booking_tab.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/widgets/gym/gym_shared.dart': <DesignSystemRule>{
     DesignSystemRule.materialIcons,
   },
 };
@@ -143,6 +72,10 @@ final _bareCardPattern = RegExp(r'(?<![A-Za-z0-9_])Card\s*\(');
 final _bareAppBarPattern = RegExp(r'(?<![A-Za-z0-9_])AppBar\s*\(');
 final _materialIconsPattern = RegExp(r'(?<![A-Za-z0-9_])Icons\.[A-Za-z0-9_]+');
 final _rawSnackBarPattern = RegExp(r'\bshowSnackBar\s*\(');
+final _rawSwitchPattern = RegExp(r'\b(Switch|SwitchListTile)\s*\(|\bSwitch\.adaptive\s*\(');
+final _rawSegmentedButtonPattern = RegExp(r'\bSegmentedButton\s*(?:<|\()');
+final _rawDropdownPattern = RegExp(r'\bDropdownButton(?:FormField)?\s*(?:<|\()');
+final _rawDatePickerPattern = RegExp(r'\bshowDate(?:Range)?Picker\s*\(');
 
 Set<DesignSystemRule> findMatchedLegacyRules(String source) {
   final matched = <DesignSystemRule>{};
@@ -193,6 +126,26 @@ List<String> findDesignSystemViolations(
     if (_magicBorderRadiusPattern.hasMatch(line)) {
       violations.add(
         'L$lineNumber: magic BorderRadius.circular(...) — use TpTokens.radius* instead',
+      );
+    }
+    if (_rawSwitchPattern.hasMatch(line)) {
+      violations.add(
+        'L$lineNumber: raw Switch / SwitchListTile — use AdaptiveSwitch / AdaptiveSwitchRow instead',
+      );
+    }
+    if (_rawSegmentedButtonPattern.hasMatch(line)) {
+      violations.add(
+        'L$lineNumber: raw SegmentedButton — use AdaptiveSegmentedControl instead',
+      );
+    }
+    if (_rawDropdownPattern.hasMatch(line)) {
+      violations.add(
+        'L$lineNumber: raw DropdownButton — use AdaptiveSelect instead',
+      );
+    }
+    if (_rawDatePickerPattern.hasMatch(line)) {
+      violations.add(
+        'L$lineNumber: raw showDatePicker / showDateRangePicker — use showAdaptiveDate*Picker instead',
       );
     }
     if (!allowedLegacyRules.contains(DesignSystemRule.bareCard) &&
@@ -279,7 +232,7 @@ void main() {
     }
   });
 
-  test('guard detects all eight forbidden style drift patterns', () {
+  test('guard detects all twelve forbidden style and control drift patterns', () {
     const badSnippet = '''
 Widget build(BuildContext context) {
   final c = const Color(0xFF123456);
@@ -295,13 +248,17 @@ Widget build(BuildContext context) {
           ),
         ),
         Card(child: Text('bare')),
+        Switch(value: true, onChanged: (_) {}),
+        SegmentedButton<int>(segments: const [], selected: const {}, onSelectionChanged: (_) {}),
+        DropdownButton<String>(items: const [], onChanged: (_) {}),
+        ElevatedButton(onPressed: () => showDatePicker(context: context, firstDate: DateTime(2020), lastDate: DateTime(2030)), child: const Text('pick')),
       ],
     ),
   );
 }
 ''';
     final violations = findDesignSystemViolations(badSnippet);
-    expect(violations, hasLength(8));
+    expect(violations, hasLength(12));
 
     const cleanSnippet = '''
 Widget build(BuildContext context) {

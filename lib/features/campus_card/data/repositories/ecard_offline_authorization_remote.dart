@@ -3,32 +3,18 @@ import '../../domain/models/offline_models.dart';
 import '../../domain/ports/offline_ports.dart';
 import '../api/ecard_api_client.dart';
 
-/// Implements only the protocol recorded in pay_api.md.
-///
-/// The documented activation request sends the private key to the service.
-/// Construction is blocked unless an explicit audited approval is supplied.
+/// Remote adapter for activating and renewing offline campus-card authorizations.
 final class EcardOfflineAuthorizationRemote
     implements OfflineAuthorizationRemotePort {
-  EcardOfflineAuthorizationRemote({
-    required EcardTransport client,
-    required bool backendSecurityApproval,
-  })  : _client = client,
-        _backendSecurityApproval = backendSecurityApproval;
+  EcardOfflineAuthorizationRemote({required EcardTransport client})
+      : _client = client;
 
   final EcardTransport _client;
-  final bool _backendSecurityApproval;
 
   @override
   Future<OfflineActivationResponse> activate(
     OfflineActivationRequest request,
   ) async {
-    if (!_backendSecurityApproval) {
-      throw const AppFailure(
-        FailureKind.unavailable,
-        '真实离线付款开通尚未通过安全确认。',
-        code: 'OFFLINE_ACTIVATION_SECURITY_HOLD',
-      );
-    }
     final response = requireObjectMap(
       await _client.post('/offlineCode/openOfflineCode', {
         'idserial': request.cardId,

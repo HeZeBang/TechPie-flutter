@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:techpie/utils/platform.dart';
+import 'package:techpie/widgets/adaptive_switch.dart';
 import 'package:techpie/widgets/page_refresh.dart';
 
 import '../../app/app_providers.dart';
@@ -932,15 +933,15 @@ class _PaymentCodePageState extends ConsumerState<PaymentCodePage> {
                       AppleListRow(
                         label: '离线付款码',
                         verticalPadding: 4,
-                        trailing: Switch.adaptive(
+                        trailing: AdaptiveSwitch(
                           // The switch is the user's mode, not "an offline code happens
                           // to be on screen". An unavailable grant only blocks turning
                           // the mode on; turning it off remains available.
                           value: manualOffline,
-                          activeTrackColor: context.gpColors.action,
-                          onChanged: canToggleOffline
-                              ? (value) => Navigator.pop(sheetContext, value)
-                              : null,
+                          enabled: canToggleOffline,
+                          semanticLabel: '离线付款码',
+                          onChanged: (value) =>
+                              Navigator.pop(sheetContext, value),
                         ),
                       ),
                     ],

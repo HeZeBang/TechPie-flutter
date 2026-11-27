@@ -1,7 +1,10 @@
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:techpie/models/feature.dart';
 import 'package:techpie/models/home_layout.dart';
 import 'package:techpie/services/storage_service.dart';
+import 'package:techpie/widgets/home/home_widget_chrome.dart';
 
 void main() {
   group('HomeMobileLayout', () {
@@ -14,7 +17,8 @@ void main() {
         HomeWidgetId.quickActions,
       ]);
       expect(layout.campusCardStyle, HomeCampusCardStyle.compact);
-      expect(layout.availableToAdd, isEmpty);
+      expect(layout.availableToAdd, hasLength(HomeWidgetId.values.length - 4));
+      expect(layout.availableToAdd, contains(HomeWidgetId.campusGrades));
       expect(layout.isEmpty, isFalse);
     });
 
@@ -50,7 +54,7 @@ void main() {
       var layout = HomeMobileLayout.defaults();
       layout = layout.removeWidget(HomeWidgetId.deadlines);
       expect(layout.contains(HomeWidgetId.deadlines), isFalse);
-      expect(layout.availableToAdd, [HomeWidgetId.deadlines]);
+      expect(layout.availableToAdd.first, HomeWidgetId.deadlines);
 
       // Adding again does not duplicate.
       final added = layout.addWidget(HomeWidgetId.deadlines, atIndex: 1);
@@ -177,6 +181,52 @@ void main() {
 
       expect(storage.homeDesktopLayout, customDesktop);
       expect(storage.homeMobileLayout, customMobile);
+
+      final campusMobile = HomeMobileLayout(
+        order: const [
+          HomeWidgetId.campusCard,
+          HomeWidgetId.campusGrades,
+          HomeWidgetId.campusBlackboard,
+          HomeWidgetId.campusStudentLeave,
+        ],
+      );
+      expect(HomeMobileLayout.decode(campusMobile.encode()), campusMobile);
+
+      final campusDesktop = HomeDesktopLayout(
+        primary: const [HomeWidgetId.campusGrades, HomeWidgetId.campusStudyPlan],
+        secondary: const [HomeWidgetId.campusOaGym, HomeWidgetId.campusJobs],
+      );
+      expect(HomeDesktopLayout.decode(campusDesktop.encode()), campusDesktop);
+    });
+  });
+
+  group('Campus service Home catalog completeness', () {
+    test('every Feature in featureEntries maps uniquely to a HomeWidgetId', () {
+      final mappedFeatureIds = <String, HomeWidgetId>{};
+      for (final id in HomeWidgetId.values) {
+        final meta = homeWidgetCatalog[id];
+        expect(meta, isNotNull, reason: 'Missing catalog metadata for $id');
+        expect(meta!.title.trim(), isNotEmpty);
+        expect(meta.subtitle.trim(), isNotEmpty);
+        expect(homeWidgetIcon(id), isA<IconData>());
+        if (meta.featureId != null) {
+          expect(
+            mappedFeatureIds.containsKey(meta.featureId),
+            isFalse,
+            reason: 'Duplicate featureId mapping for ${meta.featureId}',
+          );
+          mappedFeatureIds[meta.featureId!] = id;
+        }
+      }
+
+      for (final feature in featureEntries) {
+        expect(
+          mappedFeatureIds.containsKey(feature.id),
+          isTrue,
+          reason: 'Feature ${feature.id} (${feature.description}) has no Home widget',
+        );
+      }
+      expect(mappedFeatureIds.length, featureEntries.length);
     });
   });
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart' show ImagePicker, XFile;
 
@@ -6,10 +8,17 @@ import '../services/campus/campus_errors.dart';
 import '../services/student_leave_attachments.dart';
 import '../services/student_leave_service.dart';
 import '../services/student_leave_submission.dart';
+import '../theme/theme.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_date_picker.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_progress_indicator.dart';
+import '../widgets/adaptive_select.dart';
+import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 
 Future<bool?> openStudentLeaveEditor(
   BuildContext context,
@@ -103,8 +112,12 @@ class _LeaveEditorState extends State<_LeaveEditor> {
         initialProperty.isEmpty ? <LeaveKind>[] : await service.leaveTypes(initialProperty, rev);
     final requirements =
         initialType.isEmpty ? null : await service.leaveTypeRequirements(initialType, rev);
-    if (widget.initial.containsKey('QJKSRQ') && widget.initial.containsKey('QJJSRQ')) {
-      final start = DateTime.parse(initial['QJKSRQ']!), end = DateTime.parse(initial['QJJSRQ']!);
+    final start = DateTime.tryParse(initial['QJKSRQ'] ?? '');
+    final end = DateTime.tryParse(initial['QJJSRQ'] ?? '');
+    if (widget.initial.containsKey('QJKSRQ') &&
+        widget.initial.containsKey('QJJSRQ') &&
+        start != null &&
+        end != null) {
       initial['DZ_KCMC'] = await service.affectedCourses(start, end, rev);
     }
     service.check(rev);
@@ -139,6 +152,7 @@ class _LeaveEditorState extends State<_LeaveEditor> {
         setState(() {
           error = _leaveError(e);
           values.remove('QJXZ');
+          values.remove('QJXZ_DISPLAY');
         });
       }
     } finally {
@@ -179,15 +193,17 @@ class _LeaveEditorState extends State<_LeaveEditor> {
     final now = DateTime.now();
     final min = kind?.earliestStart(now) ?? DateTime(now.year, now.month, now.day - 7);
     final start = date('QJKSRQ'), end = date('QJJSRQ');
+    final firstDate = edit && start != null && start.isBefore(min) ? start : min;
     final maxYear = [now.year + 2, if (end != null) end.year + 1].reduce((a, b) => a > b ? a : b);
-    final range = await showDateRangePicker(
+    final range = await showAdaptiveDateRangePicker(
       context: context,
-      firstDate: min,
+      firstDate: firstDate,
       lastDate: DateTime(maxYear, 12, 31),
-      initialDateRange: start != null && end != null && !start.isBefore(min) && !end.isBefore(start)
-          ? DateTimeRange(start: start, end: end)
-          : null,
-      helpText: '选择请假日期',
+      initialDateRange:
+          start != null && end != null && !start.isBefore(firstDate) && !end.isBefore(start)
+              ? DateTimeRange(start: start, end: end)
+              : null,
+      title: '选择请假日期',
     );
     if (!mounted || invalidAccount || range == null) return;
     setState(() {
@@ -222,15 +238,17 @@ class _LeaveEditorState extends State<_LeaveEditor> {
     try {
       final files = await ImagePicker().pickMultiImage();
       if (!mounted || invalidAccount || files.isEmpty) return;
-      if (!course) {
-        for (final f in files) {
-          final extension = f.name.split('.').last.toLowerCase();
-          if (!StudentLeaveAttachments.extensions.contains(extension)) {
-            throw const FormatException('该格式不支持作为证明材料，请选择图片、PDF 或学校支持的文档');
-          }
-          if (await f.length() > StudentLeaveAttachments.maxProofBytes) {
-            throw const FormatException('每份证明材料须小于或等于 5 MiB');
-          }
+      for (final f in files) {
+        final dot = f.name.lastIndexOf('.');
+        final extension =
+            dot > 0 && dot < f.name.length - 1 ? f.name.substring(dot + 1).toLowerCase() : '';
+        if (!StudentLeaveAttachments.extensions.contains(extension)) {
+          throw FormatException(
+            '该格式不支持作为${course ? '任课教师知情材料' : '证明材料'}，请选择图片、PDF 或学校支持的文档',
+          );
+        }
+        if (await f.length() > StudentLeaveAttachments.maxProofBytes) {
+          throw FormatException('每份${course ? '任课教师知情材料' : '证明材料'}须小于或等于 5 MiB');
         }
       }
       if (!mounted || invalidAccount) return;
@@ -337,52 +355,75 @@ class _LeaveEditorState extends State<_LeaveEditor> {
   }
 
   @override
-  Widget build(BuildContext context) => PopScope(
-        canPop: !busy,
-        child: Scaffold(
-          appBar: AppBar(title: Text(edit ? '编辑请假' : '填写请假申请')),
-          body: invalidAccount
-              ? const Center(child: Text('账号已切换，请返回请假记录。'))
-              : FutureBuilder<void>(
-                  future: startup,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState != ConnectionState.done) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (snapshot.hasError) {
-                      return Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(_leaveError(snapshot.error!)),
-                            TextButton(
-                              onPressed: () => setState(() => startup = load()),
-                              child: const Text('重试'),
-                            ),
-                          ],
-                        ),
-                      );
-                    }
-                    return SafeArea(
+  Widget build(BuildContext context) {
+    final title = edit ? '编辑请假' : '填写请假申请';
+    return PopScope(
+      canPop: !busy,
+      child: Scaffold(
+        backgroundColor: context.tpColors.canvas,
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: title,
+            leadingItems: [
+              IosNativeNavigationBarItem(
+                id: 'back',
+                title: '返回',
+                sfSymbol: 'chevron.left',
+                accessibilityLabel: '返回',
+                enabled: !busy,
+                placementGroup: 'leading-main',
+              ),
+            ],
+            onItemPressed: (_) {
+              if (!busy) unawaited(maybePopAdaptivePage<bool>(context));
+            },
+          ),
+          material: () => BlurredAppBar(title: Text(title)),
+        ),
+        body: invalidAccount
+            ? const Center(child: Text('账号已切换，请返回请假记录。'))
+            : FutureBuilder<void>(
+                future: startup,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState != ConnectionState.done) {
+                    return const Center(child: AdaptiveActivityIndicator());
+                  }
+                  if (snapshot.hasError) {
+                    return Center(
                       child: Column(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          Expanded(
-                            child: AbsorbPointer(
-                              absorbing: busy || uncertain,
-                              child: SingleChildScrollView(
-                                padding: const EdgeInsets.all(16),
-                                child: TpPageBody(child: applicationFields()),
-                              ),
-                            ),
+                          Text(_leaveError(snapshot.error!)),
+                          TextButton(
+                            onPressed: () => setState(() => startup = load()),
+                            child: const Text('重试'),
                           ),
-                          submitBar(),
                         ],
                       ),
                     );
-                  },
-                ),
-        ),
-      );
+                  }
+                  return SafeArea(
+                    top: false,
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: AbsorbPointer(
+                            absorbing: busy || uncertain,
+                            child: SingleChildScrollView(
+                              padding: const EdgeInsets.all(16),
+                              child: TpPageBody(child: applicationFields()),
+                            ),
+                          ),
+                        ),
+                        submitBar(),
+                      ],
+                    ),
+                  );
+                },
+              ),
+      ),
+    );
+  }
 
   Widget applicationFields() => Form(
         key: _fields,
@@ -406,14 +447,14 @@ class _LeaveEditorState extends State<_LeaveEditor> {
               ),
             OutlinedButton.icon(
               onPressed: type.isEmpty ? null : pickDates,
-              icon: const Icon(Icons.date_range),
+              icon: const Icon(TpIcons.calendar),
               label: Text(dateText),
             ),
             field('QJSY', '请假事由', lines: 2, limit: 1000),
             section('请假去向'),
             OutlinedButton.icon(
               onPressed: pickRegion,
-              icon: const Icon(Icons.place_outlined),
+              icon: const Icon(TpIcons.location),
               label: Text(value('DZ_QJQX_DISPLAY').isEmpty ? '选择省市区' : value('DZ_QJQX_DISPLAY')),
             ),
             field('DZ_XXDZ', '详细地址'),
@@ -510,21 +551,52 @@ class _LeaveEditorState extends State<_LeaveEditor> {
     Map<String, String> options,
     ValueChanged<String?> onChanged, {
     bool required = false,
-  }) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: DropdownButtonFormField<String>(
-          key: ValueKey((label, selected, options.length)),
-          isExpanded: true,
-          initialValue: options.containsKey(selected) ? selected : null,
-          decoration: InputDecoration(labelText: label),
-          items: [
-            for (final e in options.entries) DropdownMenuItem(value: e.key, child: Text(e.value)),
-          ],
-          onChanged: options.isEmpty ? null : onChanged,
-          validator: (v) => required && v == null ? '请选择$label' : null,
-        ),
-      );
+  }) {
+    final validValue = options.containsKey(selected) ? selected : null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: FormField<String>(
+        key: ValueKey((label, selected, options.length)),
+        initialValue: validValue,
+        validator: (v) =>
+            required && (v == null || v.isEmpty) ? '请选择$label' : null,
+        builder: (field) {
+          final colors = context.tpColors;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AdaptiveSelect(
+                label: label,
+                width: double.infinity,
+                enabled: options.isNotEmpty,
+                value: field.value,
+                placeholder: '请选择$label',
+                options: [
+                  for (final e in options.entries)
+                    AdaptiveSelectOption(value: e.key, label: e.value),
+                ],
+                onChanged: (v) {
+                  field.didChange(v);
+                  onChanged(v);
+                },
+              ),
+              if (field.hasError)
+                Padding(
+                  padding: const EdgeInsets.only(top: TpTokens.space1),
+                  child: Text(
+                    field.errorText!,
+                    style: TpTypography.itemMeta(colors).copyWith(
+                      color: colors.dangerRed,
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
   Widget field(String code, String label, {TextInputType? keyboard, int lines = 1, int? limit}) =>
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -548,11 +620,11 @@ class _LeaveEditorState extends State<_LeaveEditor> {
       for (final f in selected)
         ListTile(
           contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.attach_file),
+          leading: const Icon(TpIcons.attach),
           title: Text(f.name),
           trailing: IconButton(
             tooltip: '移除 ${f.name}',
-            icon: const Icon(Icons.close),
+            icon: const Icon(TpIcons.close),
             onPressed: () => setState(() => selected.remove(f)),
           ),
         ),
@@ -560,7 +632,7 @@ class _LeaveEditorState extends State<_LeaveEditor> {
         alignment: AlignmentDirectional.centerStart,
         child: TextButton.icon(
           onPressed: () => pickFiles(course),
-          icon: const Icon(Icons.attach_file),
+          icon: const Icon(TpIcons.attach),
           label: Text('添加$label'),
         ),
       ),
@@ -581,12 +653,29 @@ class _RegionSearch extends StatefulWidget {
 }
 
 class _RegionSearchState extends State<_RegionSearch> {
+  final _controller = TextEditingController();
   String keyword = '';
   Future<List<LeaveRegion>>? result;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   void search() {
-    if (keyword.trim().isNotEmpty) {
-      setState(() => result = widget.service.leaveRegions(keyword.trim(), widget.revision));
+    final trimmed = keyword.trim();
+    if (trimmed.isNotEmpty) {
+      setState(() => result = widget.service.leaveRegions(trimmed, widget.revision));
     }
+  }
+
+  void clear() {
+    _controller.clear();
+    setState(() {
+      keyword = '';
+      result = null;
+    });
   }
 
   @override
@@ -598,16 +687,29 @@ class _RegionSearchState extends State<_RegionSearch> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
+                controller: _controller,
                 autofocus: true,
                 decoration: InputDecoration(
                   labelText: '搜索地区名称',
-                  suffixIcon: IconButton(
-                    tooltip: '搜索',
-                    onPressed: search,
-                    icon: const Icon(Icons.search),
+                  hintText: '如：上海市、浦东新区',
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (keyword.isNotEmpty)
+                        IconButton(
+                          tooltip: '清除搜索',
+                          onPressed: clear,
+                          icon: const Icon(TpIcons.close),
+                        ),
+                      IconButton(
+                        tooltip: '搜索',
+                        onPressed: search,
+                        icon: const Icon(TpIcons.search),
+                      ),
+                    ],
                   ),
                 ),
-                onChanged: (v) => keyword = v,
+                onChanged: (v) => setState(() => keyword = v),
                 textInputAction: TextInputAction.search,
                 onSubmitted: (_) => search(),
               ),

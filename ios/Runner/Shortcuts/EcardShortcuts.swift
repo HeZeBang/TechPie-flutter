@@ -7,8 +7,10 @@ struct OpenEcardPayCodeIntent: AppIntent {
   static var description = IntentDescription("Open the campus card payment code in TechPie.")
   static var openAppWhenRun: Bool = true
 
+#if compiler(>=6.2)
   @available(iOS 26.0, *)
   static var supportedModes: IntentModes { .foreground }
+#endif
 
   @MainActor
   func perform() async throws -> some IntentResult {

@@ -9,7 +9,10 @@ import '../services/holiday_travel_service.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
 import '../widgets/adaptive_alert_dialog.dart';
+import '../widgets/adaptive_date_picker.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_segmented_control.dart';
+import '../widgets/adaptive_switch.dart';
 import '../widgets/design_system/design_system.dart';
 import 'emap_history_page.dart';
 
@@ -24,7 +27,8 @@ class HolidayTravelPage extends StatelessWidget {
       title: '节假日离返校',
       service: data,
       refresh: data.refresh,
-      webUrl: 'https://egate.shanghaitech.edu.cn/xsfw/sys/jjrlfxapp/*default/index.do',
+      webUrl:
+          'https://egate.shanghaitech.edu.cn/xsfw/sys/jjrlfxapp/*default/index.do',
       webLabel: '在学校网页登记离返校',
       content: (loaded) => _Registrations(service: data, loaded: loaded),
     );
@@ -35,6 +39,7 @@ class _Registrations extends StatefulWidget {
   const _Registrations({required this.service, required this.loaded});
   final HolidayTravelService service;
   final bool loaded;
+
   @override
   State<_Registrations> createState() => _RegistrationsState();
 }
@@ -103,13 +108,29 @@ class _RegistrationsState extends State<_Registrations> {
     });
   }
 
+  void _cancelCompose() {
+    setState(() {
+      composing = false;
+      preparing = false;
+      source = null;
+      dates = null;
+      message = null;
+      _clearDraftControllers();
+    });
+  }
+
   void _syncSummaryFromFields() {
-    final region = [provinceCtrl.text.trim(), cityCtrl.text.trim(), districtCtrl.text.trim()]
-        .where((v) => v.isNotEmpty)
-        .join(' ');
+    final region = [
+      provinceCtrl.text.trim(),
+      cityCtrl.text.trim(),
+      districtCtrl.text.trim(),
+    ].where((v) => v.isNotEmpty).join(' ');
     final lines = [
+      if (dates != null)
+        '离校日期：${dateLabel(dates!.start)}\n预计返校日期：${dateLabel(dates!.end)}',
       if (region.isNotEmpty) '省市区：$region',
       if (addressCtrl.text.trim().isNotEmpty) '详细地址：${addressCtrl.text.trim()}',
+      '是否出国/出境：${abroad ? '是' : '否'}',
       if (phoneCtrl.text.trim().isNotEmpty) '紧急联系人电话：${phoneCtrl.text.trim()}',
     ];
     summary.text = lines.join('\n');
@@ -141,11 +162,15 @@ class _RegistrationsState extends State<_Registrations> {
     _provinceCode = defaults['QXSF'] ?? '';
     _cityCode = defaults['QXCS'] ?? '';
     _districtCode = defaults['QXQX'] ?? '';
-    _provinceLabel =
-        details.fields['QXSF_DISPLAY'] ?? details.fields['YL5_DISPLAY'] ?? _provinceCode;
-    _cityLabel = details.fields['QXCS_DISPLAY'] ?? details.fields['YL6_DISPLAY'] ?? _cityCode;
-    _districtLabel =
-        details.fields['QXQX_DISPLAY'] ?? details.fields['YL7_DISPLAY'] ?? _districtCode;
+    _provinceLabel = details.fields['QXSF_DISPLAY'] ??
+        details.fields['YL5_DISPLAY'] ??
+        _provinceCode;
+    _cityLabel = details.fields['QXCS_DISPLAY'] ??
+        details.fields['YL6_DISPLAY'] ??
+        _cityCode;
+    _districtLabel = details.fields['QXQX_DISPLAY'] ??
+        details.fields['YL7_DISPLAY'] ??
+        _districtCode;
     provinceCtrl.text = _provinceLabel;
     cityCtrl.text = _cityLabel;
     districtCtrl.text = _districtLabel;
@@ -161,7 +186,11 @@ class _RegistrationsState extends State<_Registrations> {
   String dateLabel(DateTime value) =>
       '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
 
-  String _resolveRegionValue(TextEditingController ctrl, String label, String code) {
+  String _resolveRegionValue(
+    TextEditingController ctrl,
+    String label,
+    String code,
+  ) {
     final raw = ctrl.text.trim();
     if (raw == label && code.isNotEmpty) return code;
     return raw;
@@ -177,12 +206,12 @@ class _RegistrationsState extends State<_Registrations> {
 
   Future<void> chooseDates() async {
     final now = DateTime.now();
-    final selected = await showDateRangePicker(
+    final selected = await showAdaptiveDateRangePicker(
       context: context,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 2, 12, 31),
       initialDateRange: dates,
-      helpText: '选择本次离校与预计返校日期',
+      title: '选择本次离校与预计返校日期',
     );
     if (!mounted || selected == null) return;
     if (!HolidayTravel.validDates(selected.start, selected.end)) {
@@ -199,7 +228,8 @@ class _RegistrationsState extends State<_Registrations> {
     try {
       final range = dates;
       final text = [
-        if (range != null) '离校日期：${dateLabel(range.start)}\n预计返校日期：${dateLabel(range.end)}',
+        if (range != null)
+          '离校日期：${dateLabel(range.start)}\n预计返校日期：${dateLabel(range.end)}',
         summary.text.trim(),
       ].where((s) => s.isNotEmpty).join('\n');
       await Clipboard.setData(ClipboardData(text: text));
@@ -235,14 +265,17 @@ class _RegistrationsState extends State<_Registrations> {
 
     final service = widget.service;
     final revision = service.revision;
-    final regionDisplay = [provinceCtrl.text.trim(), cityCtrl.text.trim(), districtCtrl.text.trim()]
-        .where((v) => v.isNotEmpty)
-        .join(' ');
+    final regionDisplay = [
+      provinceCtrl.text.trim(),
+      cityCtrl.text.trim(),
+      districtCtrl.text.trim(),
+    ].where((v) => v.isNotEmpty).join(' ');
     final confirm = await showAdaptiveAlertDialog<bool>(
       context: context,
       title: '确认提交离校登记？',
       message: [
-        if (holidayCodeCtrl.text.trim().isNotEmpty) '节假日代码：${holidayCodeCtrl.text.trim()}',
+        if (holidayCodeCtrl.text.trim().isNotEmpty)
+          '节假日代码：${holidayCodeCtrl.text.trim()}',
         '离校日期：${dateLabel(range.start)}',
         '预计返校：${dateLabel(range.end)}',
         if (regionDisplay.isNotEmpty) '去向地区：$regionDisplay',
@@ -267,24 +300,32 @@ class _RegistrationsState extends State<_Registrations> {
         holidayCode: holidayCodeCtrl.text.trim(),
         departure: range.start,
         expectedReturn: range.end,
-        province: _resolveRegionValue(provinceCtrl, _provinceLabel, _provinceCode),
+        province: _resolveRegionValue(
+          provinceCtrl,
+          _provinceLabel,
+          _provinceCode,
+        ),
         city: _resolveRegionValue(cityCtrl, _cityLabel, _cityCode),
-        district: _resolveRegionValue(districtCtrl, _districtLabel, _districtCode),
+        district:
+            _resolveRegionValue(districtCtrl, _districtLabel, _districtCode),
         address: address,
         emergencyPhone: phone,
         abroad: abroad,
         expectedRevision: revision,
       );
+      var refreshWarning = false;
       try {
         await service.refresh();
       } catch (_) {
-        // Submission succeeded; user can pull to refresh history if needed.
+        refreshWarning = true;
       }
       if (!mounted || revision != service.revision) return;
       showAdaptiveFeedback(
         context: context,
-        message: '离校登记已提交',
-        style: AdaptiveFeedbackStyle.success,
+        message: refreshWarning ? '离校登记已提交，历史记录刷新失败，请下拉刷新' : '离校登记已提交',
+        style: refreshWarning
+            ? AdaptiveFeedbackStyle.info
+            : AdaptiveFeedbackStyle.success,
       );
       setState(() {
         composing = false;
@@ -292,9 +333,13 @@ class _RegistrationsState extends State<_Registrations> {
         _clearDraftControllers();
       });
     } on CampusRequestException catch (e) {
-      if (mounted && revision == service.revision) setState(() => message = e.message);
+      if (mounted && revision == service.revision) {
+        setState(() => message = e.message);
+      }
     } on FormatException catch (e) {
-      if (mounted && revision == service.revision) setState(() => message = e.message);
+      if (mounted && revision == service.revision) {
+        setState(() => message = e.message);
+      }
     } catch (_) {
       if (mounted && revision == service.revision) {
         setState(() => message = '离校登记提交失败，请检查网络或前往校园网页办理');
@@ -307,12 +352,12 @@ class _RegistrationsState extends State<_Registrations> {
   Future<void> confirmReturn(HolidayTravel record) async {
     if (submitting || preparing || record['WID'].isEmpty) return;
     final now = DateTime.now();
-    final picked = await showDatePicker(
+    final picked = await showAdaptiveDatePicker(
       context: context,
       initialDate: now,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 2, 12, 31),
-      helpText: '选择实际返校日期',
+      title: '选择实际返校日期',
     );
     if (picked == null || !mounted) return;
     final service = widget.service;
@@ -341,19 +386,28 @@ class _RegistrationsState extends State<_Registrations> {
         returnDate: picked,
         expectedRevision: revision,
       );
+      var refreshWarning = false;
       try {
         await service.refresh();
-      } catch (_) {}
+      } catch (_) {
+        refreshWarning = true;
+      }
       if (!mounted || revision != service.revision) return;
       showAdaptiveFeedback(
         context: context,
-        message: '返校登记已提交',
-        style: AdaptiveFeedbackStyle.success,
+        message: refreshWarning ? '返校登记已提交，请刷新核对记录' : '返校登记已提交',
+        style: refreshWarning
+            ? AdaptiveFeedbackStyle.info
+            : AdaptiveFeedbackStyle.success,
       );
     } on CampusRequestException catch (e) {
-      if (mounted && revision == service.revision) setState(() => message = e.message);
+      if (mounted && revision == service.revision) {
+        setState(() => message = e.message);
+      }
     } on FormatException catch (e) {
-      if (mounted && revision == service.revision) setState(() => message = e.message);
+      if (mounted && revision == service.revision) {
+        setState(() => message = e.message);
+      }
     } catch (_) {
       if (mounted && revision == service.revision) {
         setState(() => message = '返校登记提交失败，请前往校园网页核对');
@@ -365,6 +419,7 @@ class _RegistrationsState extends State<_Registrations> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = context.tpColors;
     final records = widget.service.history;
     final dated = records.where((r) => r.registrationDate != null).toList()
       ..sort((a, b) => b.registrationDate!.compareTo(a.registrationDate!));
@@ -372,25 +427,23 @@ class _RegistrationsState extends State<_Registrations> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SegmentedButton<bool>(
-          segments: const [
-            ButtonSegment(value: false, label: Text('登记摘要')),
-            ButtonSegment(value: true, label: Text('历史记录')),
-          ],
-          selected: {history},
-          onSelectionChanged: (v) => setState(() => history = v.single),
+        AdaptiveSegmentedControl(
+          value: history ? 1 : 0,
+          segments: const ['登记摘要', '历史记录'],
+          onChanged: (idx) => setState(() => history = idx == 1),
         ),
         const SizedBox(height: TpTokens.sectionGap),
         if (history) ...[
-          if (message != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: TpTokens.space2),
-              child: Text(
-                message!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
+          if (message != null) ...[
+            TpStateCard.error(title: message!, compact: true),
+            const SizedBox(height: TpTokens.space2),
+          ],
+          if (widget.loaded && records.isEmpty)
+            const TpStateCard.empty(
+              icon: TpIcons.luggage,
+              title: '暂无离返校登记',
+              compact: true,
             ),
-          if (widget.loaded && records.isEmpty) const Text('暂无离返校登记'),
           for (final r in records)
             Padding(
               padding: const EdgeInsets.only(bottom: TpTokens.space2),
@@ -400,7 +453,15 @@ class _RegistrationsState extends State<_Registrations> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     ListTile(
-                      title: Text([r['DJXN'], r.status].where((v) => v.isNotEmpty).join(' · ')),
+                      title: [r['DJXN'], r.status]
+                              .where((v) => v.isNotEmpty)
+                              .isEmpty
+                          ? null
+                          : Text(
+                              [r['DJXN'], r.status]
+                                  .where((v) => v.isNotEmpty)
+                                  .join(' · '),
+                            ),
                       subtitle: Text(
                         [
                           if (r['LXRQ'].isNotEmpty) '离校　${r['LXRQ']}',
@@ -421,12 +482,16 @@ class _RegistrationsState extends State<_Registrations> {
                         spacing: TpTokens.space2,
                         children: [
                           TextButton(
-                            onPressed: (preparing || submitting) ? null : () => reuse(r),
+                            onPressed: (preparing || submitting)
+                                ? null
+                                : () => reuse(r),
                             child: const Text('复用此记录的去向'),
                           ),
                           if (r['WID'].isNotEmpty)
                             TextButton(
-                              onPressed: (preparing || submitting) ? null : () => confirmReturn(r),
+                              onPressed: (preparing || submitting)
+                                  ? null
+                                  : () => confirmReturn(r),
                               child: const Text('确认返校'),
                             ),
                         ],
@@ -440,7 +505,13 @@ class _RegistrationsState extends State<_Registrations> {
           TpCard(
             title: source == null
                 ? '新建离校登记'
-                : (source!.holiday.isEmpty ? '登记去向' : '沿用${source!.holiday}去向'),
+                : (source!.holiday.isEmpty
+                    ? '登记去向'
+                    : '沿用${source!.holiday}去向'),
+            trailing: TextButton(
+              onPressed: submitting ? null : _cancelCompose,
+              child: const Text('取消编辑'),
+            ),
             padding: const EdgeInsets.all(TpTokens.space4),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -448,19 +519,24 @@ class _RegistrationsState extends State<_Registrations> {
                 if (preparing)
                   const LinearProgressIndicator()
                 else ...[
-                  if (message != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: TpTokens.space2),
+                  if (message != null) ...[
+                    TpCard(
+                      color: colors.opaqueDangerContainer,
+                      borderColor: colors.dangerRed.withValues(alpha: 0.35),
+                      padding: const EdgeInsets.all(TpTokens.space3),
                       child: Text(
                         message!,
-                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                        style: TpTypography.itemMeta(colors)
+                            .copyWith(color: colors.dangerRed),
                       ),
                     ),
+                    const SizedBox(height: TpTokens.space3),
+                  ],
                   Align(
                     alignment: AlignmentDirectional.centerStart,
                     child: OutlinedButton.icon(
                       onPressed: submitting ? null : chooseDates,
-                      icon: const Icon(Icons.date_range),
+                      icon: const Icon(TpIcons.calendar),
                       label: Text(
                         dates == null
                             ? '添加本次离返校日期'
@@ -485,7 +561,8 @@ class _RegistrationsState extends State<_Registrations> {
                           key: const ValueKey('holiday-province'),
                           controller: provinceCtrl,
                           onChanged: (_) => _syncSummaryFromFields(),
-                          decoration: const InputDecoration(labelText: '省/直辖市'),
+                          decoration:
+                              const InputDecoration(labelText: '省/直辖市'),
                         ),
                       ),
                       const SizedBox(width: TpTokens.space2),
@@ -526,11 +603,14 @@ class _RegistrationsState extends State<_Registrations> {
                       helperText: '仅用于本次页面填报，不写入本地缓存与日志。',
                     ),
                   ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('是否出国/出境'),
+                  AdaptiveSwitchRow(
+                    title: '是否出国/出境',
                     value: abroad,
-                    onChanged: submitting ? null : (v) => setState(() => abroad = v),
+                    enabled: !submitting,
+                    onChanged: (v) {
+                      abroad = v;
+                      _syncSummaryFromFields();
+                    },
                   ),
                   const SizedBox(height: TpTokens.space2),
                   TextField(
@@ -552,12 +632,13 @@ class _RegistrationsState extends State<_Registrations> {
                     children: [
                       FilledButton.icon(
                         onPressed: submitting ? null : submitDepartureForm,
-                        icon: const Icon(Icons.check_circle_outline),
+                        icon: const Icon(TpIcons.checkCircle),
                         label: Text(submitting ? '提交中…' : '提交离校登记'),
                       ),
                       OutlinedButton.icon(
-                        onPressed: summary.text.trim().isEmpty ? null : copy,
-                        icon: const Icon(Icons.copy),
+                        onPressed:
+                            summary.text.trim().isEmpty ? null : copy,
+                        icon: const Icon(TpIcons.copy),
                         label: const Text('复制摘要'),
                       ),
                     ],
@@ -576,7 +657,7 @@ class _RegistrationsState extends State<_Registrations> {
               children: [
                 if (records.isNotEmpty)
                   OutlinedButton.icon(
-                    icon: const Icon(Icons.history),
+                    icon: const Icon(TpIcons.repeat),
                     label: Text(latest == null ? '选择历史去向' : '复用上次登记去向'),
                     onPressed: () {
                       if (latest != null) {
@@ -587,7 +668,7 @@ class _RegistrationsState extends State<_Registrations> {
                     },
                   ),
                 FilledButton.icon(
-                  icon: const Icon(Icons.edit_note_outlined),
+                  icon: const Icon(TpIcons.edit),
                   label: const Text('新建离校登记'),
                   onPressed: _startFresh,
                 ),

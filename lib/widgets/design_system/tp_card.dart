@@ -104,7 +104,6 @@ class TpCard extends StatelessWidget {
     );
 
     final interactive = onTap != null || onLongPress != null;
-
     final card = Material(
       color: color ?? colors.surface,
       shape: shape,

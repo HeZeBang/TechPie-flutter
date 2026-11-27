@@ -1,6 +1,32 @@
 "widget.title" = "消费码";
 "widget.subtitle" = "支付一触即达";
 "widget.description" = "轻触打开 TechPie 校园卡消费码";
+
+"ecard.widget.brand" = "校园一卡通";
+"ecard.widget.balanceEyebrow" = "余额";
+"ecard.widget.notLinkedEyebrow" = "校园一卡通";
+"ecard.widget.tapToLink" = "点击绑定";
+"ecard.widget.payButton" = "亮码消费";
+"ecard.widget.shortPay" = "亮码";
+"ecard.widget.toggleBalance" = "显示或隐藏余额";
+
+"schedule.widget.title" = "课表";
+"schedule.widget.description" = "实时课堂进度、下一节课与近期日程安排";
+"schedule.widget.live" = "上课中";
+"schedule.widget.exam" = "考试";
+"schedule.widget.examLive" = "考试中";
+"schedule.widget.next" = "下一节";
+"schedule.widget.switchToday" = "今日";
+"schedule.widget.switchTomorrow" = "明日";
+"schedule.widget.notSynced" = "请打开 TechPie 同步";
+"schedule.widget.unavailable" = "暂时无法读取课表";
+"schedule.widget.emptyToday" = "今日课程已全部结束";
+"schedule.widget.emptyTomorrow" = "明日无课";
+"schedule.widget.emptyAuto" = "近 7 天暂无课程安排";
+"schedule.widget.moreCourses" = "还有 %ld 节";
+"schedule.widget.sampleTitle1" = "线性代数";
+"schedule.widget.sampleTitle2" = "数据结构与算法";
+
 "deadline.widget.title" = "Deadlines";
 "deadline.widget.description" = "即将截止的作业和考试";
 "deadline.widget.empty" = "暂无待办 Deadline";
@@ -16,3 +42,16 @@
 "deadline.widget.section.tomorrow" = "明天";
 "deadline.widget.section.nextWeek" = "7 天内";
 "deadline.widget.section.later" = "之后";
+"deadline.widget.sampleTitle1" = "第 4 次书面作业";
+"deadline.widget.sampleTitle2" = "期中考试";
+
+"overview.widget.title" = "今日概览";
+"overview.widget.description" = "一卡速览下一节课与近期截止事项";
+
+"widget.weekday.1" = "周一";
+"widget.weekday.2" = "周二";
+"widget.weekday.3" = "周三";
+"widget.weekday.4" = "周四";
+"widget.weekday.5" = "周五";
+"widget.weekday.6" = "周六";
+"widget.weekday.7" = "周日";
