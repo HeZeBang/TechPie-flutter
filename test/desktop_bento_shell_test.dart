@@ -170,11 +170,11 @@ void main() {
     );
 
     final tp = TpColors.light();
-    expect(activeIndicator.color, tp.opaqueBrandContainer);
+    expect(activeIndicator.color, tp.brandSoft);
     expect(inkWell.hoverColor, isNotNull);
     expect(inkWell.hoverColor, isNot(Colors.transparent));
     expect(inkWell.hoverColor!.a, lessThan(0.15));
-    expect(label.style?.color, tp.textPrimary);
+    expect(label.style?.color, tp.brandInk);
 
     // Gliding active indicator lands smoothly on the newly tapped destination.
     final indicatorBefore = tester.getTopLeft(

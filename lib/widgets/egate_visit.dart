@@ -73,6 +73,7 @@ class EgateVisit extends StatelessWidget {
               child: TpPageBody(
                 child: TpStateCard.prerequisite(
                   icon: signedIn ? TpIcons.linkedAccounts : TpIcons.login,
+                  leading: signedIn ? null : const TpBrandMark(size: 48),
                   title: signedIn ? '需要绑定 IDS 账号' : '需要先登录 TechPie',
                   message: '$title复用已绑定的校园 IDS 登录态，不额外保存密码。',
                   primaryActionLabel: signedIn ? '绑定 IDS 账号' : '登录 TechPie',

@@ -118,21 +118,24 @@ class _OaGymPageState extends State<OaGymPage>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: colors.brandSoft,
-                            borderRadius:
-                                BorderRadius.circular(TpTokens.radiusM),
+                        if (!auth.isLoggedIn)
+                          const TpBrandMark(size: 48)
+                        else
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: colors.brandSoft,
+                              borderRadius:
+                                  BorderRadius.circular(TpTokens.radiusM),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              TpIcons.gym,
+                              size: TpTokens.iconL,
+                              color: colors.brandInk,
+                            ),
                           ),
-                          alignment: Alignment.center,
-                          child: Icon(
-                            TpIcons.gym,
-                            size: TpTokens.iconL,
-                            color: colors.brandInk,
-                          ),
-                        ),
                         const SizedBox(height: TpTokens.space4),
                         Text(
                           auth.isLoggedIn ? '需要绑定 IDS 账号' : '需要先登录 TechPie',

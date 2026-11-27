@@ -66,8 +66,12 @@ class DesktopSidebar extends StatelessWidget {
     final accountSelected = accountDestinationIndex != null &&
         selectedIndex == accountDestinationIndex;
 
+    final sidebarBg = colors.isAmoled
+        ? const Color(0xFF0A0A0A)
+        : (colors.isDark ? const Color(0xFF141416) : const Color(0xFFF7F7F9));
+
     return ColoredBox(
-      color: colors.surface,
+      color: sidebarBg,
       child: SafeArea(
         right: false,
         bottom: false,
@@ -122,7 +126,11 @@ class DesktopSidebar extends StatelessWidget {
                     ),
                     if (showAccountFooter) ...[
                       const SizedBox(height: TpTokens.space2),
-                      Divider(height: 1, thickness: 0.5, color: colors.divider),
+                      Divider(
+                        height: 1,
+                        thickness: 0.5,
+                        color: colors.divider,
+                      ),
                       const SizedBox(height: TpTokens.space2),
                       _SidebarAccountTile(
                         summary: resolvedSummary,
@@ -219,9 +227,6 @@ class _SlidingSidebarNavListState extends State<_SlidingSidebarNavList>
     if (widget.entries.isEmpty) return const SizedBox.shrink();
     final colors = context.tpColors;
     final radius = BorderRadius.circular(TpTokens.radiusS);
-    final selectedBorder = colors.brand.withValues(
-      alpha: colors.isDark ? 0.30 : 0.22,
-    );
     final stride = DesktopSidebarTokens.navItemHeight + widget.itemSpacing;
     final activeSlot = _slotFor(widget.selectedIndex);
     final showIndicator = activeSlot >= 0;
@@ -253,32 +258,10 @@ class _SlidingSidebarNavListState extends State<_SlidingSidebarNavList>
             ),
             child: Material(
               key: const ValueKey('desktop.sidebar-active-indicator'),
-              color: colors.opaqueBrandContainer,
-              shape: RoundedRectangleBorder(
-                borderRadius: radius,
-                side: BorderSide(color: selectedBorder),
-              ),
+              color: colors.brandSoft,
+              shape: RoundedRectangleBorder(borderRadius: radius),
               clipBehavior: Clip.antiAlias,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Container(
-                    width: TpTokens.accentBarWidth,
-                    decoration: const BoxDecoration(
-                      borderRadius: BorderRadius.horizontal(
-                        right: Radius.circular(TpTokens.radiusBar),
-                      ),
-                    ),
-                    foregroundDecoration: BoxDecoration(
-                      color: colors.brand,
-                      borderRadius: const BorderRadius.horizontal(
-                        right: Radius.circular(TpTokens.radiusBar),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              child: const SizedBox.expand(),
             ),
           ),
         ),
@@ -336,22 +319,38 @@ class _SidebarDragHeader extends StatelessWidget {
                 height: DesktopSidebarTokens.macOsTitlebarRowHeight,
               ),
             ),
+          if (showToggleButton)
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                isMac ? 4 : DesktopSidebarTokens.headerTopPadding,
+                horizontalPadding,
+                TpTokens.space2,
+              ),
+              child: Center(
+                child: _SidebarToggleButton(
+                  collapsed: true,
+                  compact: false,
+                  onPressed: onToggleCollapsed,
+                ),
+              ),
+            ),
           Padding(
             padding: EdgeInsets.fromLTRB(
               horizontalPadding,
-              isMac ? 4 : DesktopSidebarTokens.headerTopPadding,
+              showToggleButton
+                  ? 0
+                  : (isMac ? 4 : DesktopSidebarTokens.headerTopPadding),
               horizontalPadding,
               DesktopSidebarTokens.headerBottomPadding,
             ),
-            child: showToggleButton
-                ? Center(
-                    child: _SidebarToggleButton(
-                      collapsed: true,
-                      compact: false,
-                      onPressed: onToggleCollapsed,
-                    ),
-                  )
-                : const SizedBox.shrink(),
+            child: Center(
+              child: _SidebarBrandTile(
+                canShowLabel: false,
+                compactCollapsed: true,
+                onTap: onBrandTap,
+              ),
+            ),
           ),
         ],
       );
@@ -453,51 +452,54 @@ class _SidebarDragHeader extends StatelessWidget {
 class _SidebarBrandTile extends StatelessWidget {
   const _SidebarBrandTile({
     required this.canShowLabel,
+    this.compactCollapsed = false,
     this.onTap,
   });
 
   final bool canShowLabel;
+  final bool compactCollapsed;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final radius = BorderRadius.circular(TpTokens.radiusS);
-    final logo = SizedBox(
-      width: DesktopSidebarTokens.iconColumnWidth,
-      child: Center(
-        child: TpBrandMark(
-          size: DesktopSidebarTokens.brandIconSize,
-          semanticLabel: canShowLabel ? null : 'TechPie',
-        ),
-      ),
-    );
 
-    final row = SizedBox(
-      height: DesktopSidebarTokens.brandHeight,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.start,
-        children: [
-          logo,
-          if (canShowLabel) ...[
-            const SizedBox(width: DesktopSidebarTokens.brandTextGap),
-            Expanded(
-              child: Text(
-                'TechPie',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TpTypography.cardTitle(colors).copyWith(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                  color: colors.textPrimary,
-                ),
+    final Widget content = compactCollapsed
+        ? const SizedBox(
+            width: 44,
+            height: DesktopSidebarTokens.brandHeight,
+            child: Center(
+              child: TpBrandMark(
+                size: DesktopSidebarTokens.brandIconSize,
+                semanticLabel: 'TechPie',
               ),
             ),
-          ],
-        ],
-      ),
-    );
+          )
+        : SizedBox(
+            height: DesktopSidebarTokens.brandHeight,
+            child: Row(
+              mainAxisAlignment: canShowLabel
+                  ? MainAxisAlignment.start
+                  : MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: DesktopSidebarTokens.iconColumnWidth,
+                  child: Center(
+                    child: TpBrandMark(
+                      size: DesktopSidebarTokens.brandIconSize,
+                      semanticLabel: canShowLabel ? null : 'TechPie',
+                    ),
+                  ),
+                ),
+                if (canShowLabel) ...[
+                  const SizedBox(width: DesktopSidebarTokens.brandTextGap),
+                  const Expanded(child: TpBrandWordmark(fontSize: 17.5)),
+                  const SizedBox(width: TpTokens.space2),
+                ],
+              ],
+            ),
+          );
 
     final tile = Material(
       key: const ValueKey('desktop.sidebar-brand'),
@@ -505,7 +507,7 @@ class _SidebarBrandTile extends StatelessWidget {
       shape: RoundedRectangleBorder(borderRadius: radius),
       clipBehavior: Clip.antiAlias,
       child: onTap == null
-          ? row
+          ? content
           : InkWell(
               onTap: onTap,
               borderRadius: radius,
@@ -514,7 +516,7 @@ class _SidebarBrandTile extends StatelessWidget {
               ),
               highlightColor: colors.textPrimary.withValues(alpha: 0.06),
               splashColor: colors.brand.withValues(alpha: 0.08),
-              child: row,
+              child: content,
             ),
     );
 
@@ -557,13 +559,10 @@ class _SidebarCommandTrigger extends StatelessWidget {
 
         final button = Material(
           key: const ValueKey('desktop.command-palette-trigger'),
-          color: colors.surfaceSubtle,
-          shape: RoundedRectangleBorder(
-            borderRadius: radius,
-            side: colors.border == Colors.transparent
-                ? BorderSide.none
-                : BorderSide(color: colors.border),
-          ),
+          color: colors.isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : colors.textPrimary.withValues(alpha: 0.055),
+          shape: RoundedRectangleBorder(borderRadius: radius),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
@@ -572,13 +571,19 @@ class _SidebarCommandTrigger extends StatelessWidget {
               alpha: colors.isDark ? 0.06 : 0.04,
             ),
             child: SizedBox(
-              height: 34,
+              height: 32,
               child: Row(
                 children: [
-                  const SizedBox(
-                    width: DesktopSidebarTokens.iconColumnWidth,
+                  SizedBox(
+                    width: canShowLabel
+                        ? DesktopSidebarTokens.iconColumnWidth
+                        : constraints.maxWidth,
                     child: Center(
-                      child: Icon(TpIcons.search, size: 16),
+                      child: Icon(
+                        TpIcons.search,
+                        size: 14.5,
+                        color: colors.textMuted,
+                      ),
                     ),
                   ),
                   if (canShowLabel) ...[
@@ -598,11 +603,10 @@ class _SidebarCommandTrigger extends StatelessWidget {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: colors.surface,
+                          color: colors.isDark
+                              ? Colors.white.withValues(alpha: 0.08)
+                              : colors.surface,
                           borderRadius: BorderRadius.circular(TpTokens.radiusXs),
-                          border: colors.border == Colors.transparent
-                              ? Border.all(color: colors.divider, width: 0.5)
-                              : Border.all(color: colors.border, width: 0.75),
                         ),
                         child: Text(
                           shortcutLabel,
@@ -643,9 +647,6 @@ class _SidebarAccountTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final radius = BorderRadius.circular(TpTokens.radiusS);
-    final selectedBorder = colors.brand.withValues(
-      alpha: colors.isDark ? 0.30 : 0.22,
-    );
     final title = summary.isLoggedIn && summary.displayName.isNotEmpty
         ? summary.displayName
         : '点击登录';
@@ -663,12 +664,10 @@ class _SidebarAccountTile extends StatelessWidget {
                     DesktopSidebarTokens.navItemTextGap +
                     DesktopSidebarTokens.minLabelWidth;
         final avatar = Container(
-          width: 30,
-          height: 30,
+          width: 28,
+          height: 28,
           decoration: BoxDecoration(
-            color: summary.isLoggedIn || selected
-                ? colors.brandSoft
-                : colors.surfaceSubtle,
+            color: summary.isLoggedIn ? colors.brandSoft : colors.surfaceSubtle,
             shape: BoxShape.circle,
           ),
           alignment: Alignment.center,
@@ -676,13 +675,13 @@ class _SidebarAccountTile extends StatelessWidget {
               ? Text(
                   summary.avatarText,
                   style: TpTypography.badge(colors.brandInk).copyWith(
-                    fontSize: 12,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                   ),
                 )
               : Icon(
                   TpIcons.profile,
-                  size: 15,
+                  size: 14.5,
                   color: selected ? colors.brandInk : colors.textMuted,
                 ),
         );
@@ -691,49 +690,44 @@ class _SidebarAccountTile extends StatelessWidget {
           selected: selected,
           button: true,
           label: summary.isLoggedIn ? '我的：$title' : '我的',
-          child: Material(
-            key: const ValueKey('desktop.sidebar-account'),
-            color: selected ? colors.opaqueBrandContainer : Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: radius,
-              side: selected
-                  ? BorderSide(color: selectedBorder)
-                  : BorderSide.none,
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: radius,
-              hoverColor: colors.textPrimary.withValues(
-                alpha: colors.isDark ? 0.06 : 0.04,
-              ),
-              child: SizedBox(
-                height: collapsed ? 44 : 48,
-                child: Stack(
-                  alignment: Alignment.centerLeft,
-                  children: [
-                    if (selected)
-                      Positioned(
-                        left: 0,
-                        top: 10,
-                        bottom: 10,
-                        child: Container(
-                          key: const ValueKey(
-                            'desktop.sidebar-account-active-bar',
-                          ),
-                          width: TpTokens.accentBarWidth,
-                          decoration: BoxDecoration(
-                            color: colors.brand,
-                            borderRadius: const BorderRadius.horizontal(
-                              right: Radius.circular(TpTokens.radiusBar),
-                            ),
-                          ),
+          child: SizedBox(
+            height: collapsed ? 42 : 46,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (selected)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        key: const ValueKey(
+                          'desktop.sidebar-account-active-bar',
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.brandSoft,
+                          borderRadius: radius,
                         ),
                       ),
-                    Row(
+                    ),
+                  ),
+                Material(
+                  key: const ValueKey('desktop.sidebar-account'),
+                  type: MaterialType.transparency,
+                  shape: RoundedRectangleBorder(borderRadius: radius),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: onTap,
+                    borderRadius: radius,
+                    hoverColor: colors.textPrimary.withValues(
+                      alpha: colors.isDark ? 0.06 : 0.04,
+                    ),
+                    highlightColor: colors.textPrimary.withValues(alpha: 0.06),
+                    splashColor: colors.brand.withValues(alpha: 0.08),
+                    child: Row(
                       children: [
                         SizedBox(
-                          width: DesktopSidebarTokens.iconColumnWidth,
+                          width: canShowLabel
+                              ? DesktopSidebarTokens.iconColumnWidth
+                              : constraints.maxWidth,
                           child: Center(child: avatar),
                         ),
                         if (canShowLabel) ...[
@@ -749,9 +743,13 @@ class _SidebarAccountTile extends StatelessWidget {
                                   title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TpTypography.itemTitle(colors).copyWith(
+                                  style:
+                                      TpTypography.itemTitle(colors).copyWith(
                                     fontSize: 13.5,
                                     fontWeight: FontWeight.w600,
+                                    color: selected
+                                        ? colors.brandInk
+                                        : colors.textPrimary,
                                   ),
                                 ),
                                 Text(
@@ -774,9 +772,9 @@ class _SidebarAccountTile extends StatelessWidget {
                         ],
                       ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         );

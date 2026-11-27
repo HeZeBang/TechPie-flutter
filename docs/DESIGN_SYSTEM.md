@@ -11,6 +11,10 @@ This document is the single visual source of truth for **TechPie-flutter** acros
 
 ## 2. Design Tokens & Dual Density (`lib/theme/tp_tokens.dart`, `lib/theme/tp_density.dart`)
 
+### Brand Icon
+
+The [brand tokens](brand-icon/brand-icon.tokens.json) preserve the in-app mark proportions and record the Apple app icon proposal. The [P artwork](brand-icon/01-TechPie-P.svg) is a single foreground layer for Icon Composer. Its nominal height is 672 px on a 1024 px canvas, close to the existing icon's proportions and large enough to retain the triangular counter at small sizes. The vertical gradient is centered on TechRed. The system supplies the outer mask and highlights. The Apple app icon proposal was previewed on the official template and still needs an Icon Composer render.
+
 ### Spacing (4 dp grid) & Density Presets
 
 - **Mobile (`TpDensity.comfortable`)**: Touch-first sizing (`16 / 14` card padding, `12` row vertical padding, `48` min row height, `20` icon size).
