@@ -595,7 +595,7 @@
 				6B21A0E93BEBF45D6366636C /* DeadlineWidgetBridge.swift in Sources */,
 				TPW200000000000000000201 /* HomeWidgetsBridge.swift in Sources */,
 				A716AD2026B149D994791951 /* DeadlineReminderBridge.swift in Sources */,
-				CC4F9E102E6A10010000A101 /* MacosNativeControlsPlugin.swift in Sources */ in Sources,
+				CC4F9E102E6A10010000A101 /* MacosNativeControlsPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
