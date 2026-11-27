@@ -35,7 +35,10 @@ import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
+import '../widgets/adaptive_option_sheet.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_popup_menu_button.dart';
+import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_text_input_dialog.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
@@ -941,53 +944,62 @@ class _SchedulePageState extends State<SchedulePage> {
                 onPressed: _showViewSettingsMenu,
               )
             else
-              PopupMenuButton<String>(
-                icon: const Icon(TpIcons.more),
+              AdaptivePopupMenuButton<String>(
+                icon: TpIcons.more,
+                sfSymbol: 'ellipsis',
                 tooltip: '视图设置',
                 onSelected: _onMenuSelected,
-                itemBuilder: (context) => [
+                items: [
                   if (isAgenda) ...[
                     if (!isDesktop())
-                      PopupMenuItem(
+                      AdaptivePopupMenuItem<String>(
                         value: 'refresh',
+                        label: '刷新',
+                        sfSymbol: 'arrow.clockwise',
                         enabled: auth.isLoggedIn &&
                             tpAuth.hasIdsBinding &&
                             !_schedule.loading &&
                             !_assignments.loading,
-                        child: const Text('刷新'),
                       ),
-                    PopupMenuItem(
+                    AdaptivePopupMenuItem<String>(
                       value: 'exportCalendar',
+                      label: _exportingCalendar ? '正在导出课表' : '导出课表',
+                      sfSymbol: 'square.and.arrow.up',
                       enabled: !_exportingCalendar,
-                      child: Text(_exportingCalendar ? '正在导出课表' : '导出课表'),
                     ),
-                    const PopupMenuDivider(),
+                    const AdaptivePopupMenuItem<String>.divider(),
                   ],
-                  const PopupMenuItem(
+                  const AdaptivePopupMenuItem<String>(
                     value: 'semester',
-                    child: Text('切换学期'),
+                    label: '切换学期',
+                    sfSymbol: 'calendar',
                   ),
-                  const PopupMenuItem(value: 'source', child: Text('课表来源')),
-                  CheckedPopupMenuItem(
+                  const AdaptivePopupMenuItem<String>(
+                    value: 'source',
+                    label: '课表来源',
+                    sfSymbol: 'tray.2',
+                  ),
+                  AdaptivePopupMenuItem<String>(
                     value: 'saturday',
+                    label: '显示周六',
                     checked: _showSaturday,
-                    child: const Text('显示周六'),
                   ),
-                  CheckedPopupMenuItem(
+                  AdaptivePopupMenuItem<String>(
                     value: 'sunday',
+                    label: '显示周日',
                     checked: _showSunday,
-                    child: const Text('显示周日'),
                   ),
-                  CheckedPopupMenuItem(
+                  AdaptivePopupMenuItem<String>(
                     value: 'ghost',
+                    label: '显示非本周课程',
                     checked: _showGhostCourses,
-                    child: const Text('显示非本周课程'),
                   ),
-                  const PopupMenuDivider(),
-                  PopupMenuItem(
+                  const AdaptivePopupMenuItem<String>.divider(),
+                  AdaptivePopupMenuItem<String>(
                     value: 'addCustom',
+                    label: '添加课程',
+                    sfSymbol: 'plus',
                     enabled: _canAddCustomCourses,
-                    child: const Text('添加课程'),
                   ),
                 ],
               ),
@@ -1665,13 +1677,15 @@ class _SchedulePageState extends State<SchedulePage> {
           Text('研究生课表', style: theme.textTheme.labelLarge),
           if (_schedule.identityWarning != null) Text(_schedule.identityWarning!),
           if (schemes.length > 1)
-            DropdownButton<String>(
+            AdaptiveSelect(
+              width: 240,
               value: _schedule.graduateScheme,
-              items: schemes.entries
-                  .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
-                  .toList(),
+              placeholder: '选择培养方案',
+              options: [
+                for (final e in schemes.entries)
+                  AdaptiveSelectOption(value: e.key, label: e.value),
+              ],
               onChanged: (value) async {
-                if (value == null) return;
                 try {
                   await _schedule.selectGraduateScheme(value);
                 } catch (e) {
@@ -1698,43 +1712,29 @@ class _SchedulePageState extends State<SchedulePage> {
   }
 
   Future<void> _showScheduleSource() async {
-    final source = await showDialog<CampusScheduleSource>(
+    final extraLines = [
+      if (_schedule.identityLabel != null) _schedule.identityLabel!,
+      if (_schedule.identityWarning != null) _schedule.identityWarning!,
+    ];
+    final source = await showAdaptiveOptionSheet<CampusScheduleSource>(
       context: context,
-      builder: (context) {
-        final colors = context.tpColors;
-        return SimpleDialog(
-          title: const Text('课表来源'),
-          children: [
-            for (final option in [
-              (CampusScheduleSource.automatic, '自动识别（IDS 身份）'),
-              (CampusScheduleSource.undergraduate, '本科教务课表'),
-              (CampusScheduleSource.graduate, '研究生课表'),
-            ])
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, option.$1),
-                child: Row(
-                  children: [
-                    Icon(
-                      _schedule.scheduleSource == option.$1
-                          ? TpIcons.checkCircle
-                          : Icons.circle_outlined,
-                      size: 20,
-                      color: _schedule.scheduleSource == option.$1
-                          ? colors.brandInk
-                          : colors.textMuted,
-                    ),
-                    const SizedBox(width: 12),
-                    Flexible(child: Text(option.$2)),
-                  ],
-                ),
-              ),
-            if (_schedule.identityLabel != null)
-              Padding(padding: const EdgeInsets.all(24), child: Text(_schedule.identityLabel!)),
-            if (_schedule.identityWarning != null)
-              Padding(padding: const EdgeInsets.all(24), child: Text(_schedule.identityWarning!)),
-          ],
-        );
-      },
+      title: '课表来源',
+      message: extraLines.isEmpty ? null : extraLines.join('\n'),
+      selectedValue: _schedule.scheduleSource,
+      options: const [
+        AdaptiveOptionItem(
+          value: CampusScheduleSource.automatic,
+          label: '自动识别（IDS 身份）',
+        ),
+        AdaptiveOptionItem(
+          value: CampusScheduleSource.undergraduate,
+          label: '本科教务课表',
+        ),
+        AdaptiveOptionItem(
+          value: CampusScheduleSource.graduate,
+          label: '研究生课表',
+        ),
+      ],
     );
     if (source == null || !mounted) return;
     try {
@@ -1750,15 +1750,14 @@ class _SchedulePageState extends State<SchedulePage> {
     }
   }
 
-  Future<void> _showScheduleError() => showDialog<void>(
+  Future<void> _showScheduleError() => showAdaptiveAlertDialog<void>(
         context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('课表刷新失败'),
-          content: SelectableText(
-            (_schedule.error ?? '').replaceFirst(RegExp(r'^(?:FormatException|Exception):\s*'), ''),
-          ),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
-        ),
+        title: '课表刷新失败',
+        message: (_schedule.error ?? '')
+            .replaceFirst(RegExp(r'^(?:FormatException|Exception):\s*'), ''),
+        actions: const [
+          AdaptiveAlertAction<void>(label: '关闭', isDefault: true),
+        ],
       );
 
   Future<void> _showGraduateExtraCourses() async {

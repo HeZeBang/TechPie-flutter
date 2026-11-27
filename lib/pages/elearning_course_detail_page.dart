@@ -10,6 +10,7 @@ import '../services/elearning_service.dart';
 import '../theme/theme.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_segmented_control.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
 import 'elearning_hub_page.dart';
@@ -98,13 +99,10 @@ class _GradesState extends State<_Grades> {
           padding: const EdgeInsets.all(TpTokens.space2),
           child: TpPageBody(
             maxWidth: 880,
-            child: SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(value: false, label: Text('成绩明细')),
-                ButtonSegment(value: true, label: Text('提交确认')),
-              ],
-              selected: {receipts},
-              onSelectionChanged: (v) => setState(() => receipts = v.first),
+            child: AdaptiveSegmentedControl(
+              value: receipts ? 1 : 0,
+              segments: const ['成绩明细', '提交确认'],
+              onChanged: (idx) => setState(() => receipts = idx == 1),
             ),
           ),
         ),
@@ -221,13 +219,10 @@ class _NewsState extends State<_News> {
             padding: const EdgeInsets.all(TpTokens.space2),
             child: TpPageBody(
               maxWidth: 880,
-              child: SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: false, label: Text('课程公告')),
-                  ButtonSegment(value: true, label: Text('课程小组')),
-                ],
-                selected: {groups},
-                onSelectionChanged: (v) => setState(() => groups = v.first),
+              child: AdaptiveSegmentedControl(
+                value: groups ? 1 : 0,
+                segments: const ['课程公告', '课程小组'],
+                onChanged: (idx) => setState(() => groups = idx == 1),
               ),
             ),
           ),

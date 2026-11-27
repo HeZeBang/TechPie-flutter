@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:techpie/utils/platform.dart';
+import 'package:techpie/widgets/adaptive_segmented_control.dart';
 import 'package:techpie/widgets/blurred_app_bar.dart';
 import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
 
@@ -486,6 +487,16 @@ final class AppleSegmentedControl extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isApplePlatform()) {
+      return SizedBox(
+        width: double.infinity,
+        child: AdaptiveSegmentedControl(
+          value: selectedIndex,
+          segments: labels,
+          onChanged: onChanged,
+        ),
+      );
+    }
     final c = context.gpColors;
     return SizedBox(
       width: double.infinity,

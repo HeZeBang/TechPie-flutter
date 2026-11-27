@@ -10,6 +10,7 @@ import '../services/service_provider.dart';
 import '../theme/theme.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
+import '../widgets/adaptive_select.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
@@ -386,33 +387,32 @@ class _SearchState extends State<_Search> {
                                                   false)
                                           ? selected
                                           : '';
-                                      return DropdownButtonFormField<String>(
+                                      return AdaptiveSelect(
                                         key: ValueKey(
                                           '${f.key}:${options[f.key]?.length ?? 0}:$valid',
                                         ),
-                                        decoration: InputDecoration(
-                                          labelText: f.value,
-                                        ),
-                                        initialValue: valid,
-                                        items: [
-                                          const DropdownMenuItem(
+                                        label: f.value,
+                                        width: double.infinity,
+                                        value: valid,
+                                        placeholder: '不限',
+                                        options: [
+                                          const AdaptiveSelectOption(
                                             value: '',
-                                            child: Text('不限'),
+                                            label: '不限',
                                           ),
                                           for (final opt
                                               in (options[f.key] ?? {})
                                                   .entries
                                                   .where((e) => e.key != ''))
-                                            DropdownMenuItem(
+                                            AdaptiveSelectOption(
                                               value: opt.key,
-                                              child: Text(opt.value),
+                                              label: opt.value,
                                             ),
                                         ],
                                         onChanged: (v) {
-                                          filters[f.key] = v ?? '';
+                                          setState(() => filters[f.key] = v);
                                           queueSearch();
                                         },
-                                        isExpanded: true,
                                       );
                                     },
                                   ),

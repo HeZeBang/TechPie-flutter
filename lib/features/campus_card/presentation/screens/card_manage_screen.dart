@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:techpie/utils/platform.dart';
+import 'package:techpie/widgets/adaptive_segmented_control.dart';
 import 'package:techpie/widgets/page_refresh.dart';
 
 import '../../app/app_providers.dart';
@@ -193,23 +194,14 @@ class _CardManageScreenState extends ConsumerState<CardManageScreen>
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 18),
-                child: CupertinoSlidingSegmentedControl<bool>(
-                  groupValue: editingStart,
-                  children: const {
-                    true: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 18),
-                      child: Text('开始日期'),
-                    ),
-                    false: Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 18),
-                      child: Text('结束日期'),
-                    ),
-                  },
-                  onValueChanged: (value) {
-                    if (value != null) {
-                      setSheetState(() => editingStart = value);
-                    }
-                  },
+                child: SizedBox(
+                  width: double.infinity,
+                  child: AdaptiveSegmentedControl(
+                    value: editingStart ? 0 : 1,
+                    segments: const ['开始日期', '结束日期'],
+                    onChanged: (index) =>
+                        setSheetState(() => editingStart = index == 0),
+                  ),
                 ),
               ),
               Expanded(

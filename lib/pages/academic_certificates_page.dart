@@ -15,6 +15,7 @@ import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_select.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
@@ -473,30 +474,29 @@ class _FormDialogState extends State<_FormDialog> {
                                   }
                                 },
                         )
-                      : DropdownButtonFormField<String>(
-                          isExpanded: true,
-                          initialValue: field.options.containsKey(field.value)
-                              ? field.value
+                      : AdaptiveSelect(
+                          label: field.label,
+                          width: double.infinity,
+                          enabled: !field.readOnly,
+                          value: field.options.containsKey(
+                                  values[field.name] ?? field.value,
+                                )
+                              ? (values[field.name] ?? field.value)
                               : null,
-                          decoration: InputDecoration(labelText: field.label),
-                          items: [
+                          placeholder: '请选择${field.label}',
+                          options: [
                             for (final opt in field.options.entries)
-                              DropdownMenuItem(
+                              AdaptiveSelectOption(
                                 value: opt.key,
-                                child: Text(
-                                  opt.value,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                label: opt.value,
                               ),
                           ],
-                          onChanged: field.readOnly
-                              ? null
-                              : (v) {
-                                  values[field.name] = v ?? '';
-                                  if (error != null) {
-                                    setState(() => error = null);
-                                  }
-                                },
+                          onChanged: (v) {
+                            setState(() {
+                              values[field.name] = v;
+                              error = null;
+                            });
+                          },
                         ),
                 ),
               if (error != null)

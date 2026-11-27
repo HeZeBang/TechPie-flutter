@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:techpie/widgets/adaptive_switch.dart';
 
 import '../../core/config/debug_mode_controller.dart';
 import '../../core/config/debug_mode_features.dart';
@@ -11,7 +12,6 @@ import '../../core/config/scan_payment_preferences.dart';
 import '../../domain/models/feedback_models.dart';
 import '../app/navigation.dart';
 import '../icons/platform_icons.dart';
-import '../theme/colors.dart';
 import '../widgets/apple_wallet_components.dart';
 
 final class SettingsScreen extends ConsumerWidget {
@@ -219,9 +219,9 @@ final class _SettingsSwitch extends StatelessWidget {
   final ValueChanged<bool>? onChanged;
 
   @override
-  Widget build(BuildContext context) => Switch.adaptive(
+  Widget build(BuildContext context) => AdaptiveSwitch(
         value: value,
-        activeTrackColor: context.gpColors.action,
-        onChanged: onChanged,
+        enabled: onChanged != null,
+        onChanged: (enabled) => onChanged?.call(enabled),
       );
 }

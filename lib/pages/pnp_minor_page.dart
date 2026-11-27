@@ -13,6 +13,8 @@ import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_segmented_control.dart';
+import '../widgets/adaptive_select.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
@@ -191,20 +193,16 @@ class _ApplicationsState extends State<_Applications> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        SegmentedButton<AcademicApplicationTab>(
-                          segments: const [
-                            ButtonSegment(
-                              value: AcademicApplicationTab.pnp,
-                              label: Text('P/NP'),
-                            ),
-                            ButtonSegment(
-                              value: AcademicApplicationTab.minor,
-                              label: Text('辅修'),
-                            ),
-                          ],
-                          selected: {tab},
-                          onSelectionChanged: (v) {
-                            setState(() => tab = v.single);
+                        AdaptiveSegmentedControl(
+                          value:
+                              tab == AcademicApplicationTab.minor ? 1 : 0,
+                          segments: const ['P/NP', '辅修'],
+                          onChanged: (idx) {
+                            setState(
+                              () => tab = idx == 1
+                                  ? AcademicApplicationTab.minor
+                                  : AcademicApplicationTab.pnp,
+                            );
                             unawaited(refresh());
                           },
                         ),
@@ -238,20 +236,21 @@ class _ApplicationsState extends State<_Applications> {
                         ),
                         if (pnp && s.semesters.isNotEmpty) ...[
                           const SizedBox(height: TpTokens.space2),
-                          DropdownButton<String>(
-                            isExpanded: true,
+                          AdaptiveSelect(
+                            width: double.infinity,
+                            enabled: !busy,
                             value: s.semesters.containsKey(s.selected)
                                 ? s.selected
                                 : null,
-                            items: [
+                            placeholder: '选择学期',
+                            options: [
                               for (final e in s.semesters.entries)
-                                DropdownMenuItem(
+                                AdaptiveSelectOption(
                                   value: e.key,
-                                  child: Text(e.value),
+                                  label: e.value,
                                 ),
                             ],
-                            onChanged:
-                                busy ? null : (v) => refresh(term: v),
+                            onChanged: (v) => refresh(term: v),
                           ),
                         ],
                         if (window != ApplicationWindow.closed) ...[

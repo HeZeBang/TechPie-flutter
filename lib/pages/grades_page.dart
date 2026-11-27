@@ -9,6 +9,9 @@ import '../services/grade_service.dart';
 import '../services/service_provider.dart';
 import '../theme/theme.dart';
 import '../utils/platform.dart';
+import '../widgets/adaptive_checkbox.dart';
+import '../widgets/adaptive_select.dart';
+import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
@@ -303,33 +306,32 @@ class _GradesViewState extends State<_GradesView> {
                         ],
                         if (terms.isNotEmpty) ...[
                           const SizedBox(height: TpTokens.space2),
-                          DropdownButton<String>(
-                            isExpanded: true,
+                          AdaptiveSelect(
+                            width: double.infinity,
+                            enabled: !busy,
                             value: validTermValue,
-                            hint: const Text('选择学期'),
-                            items: [
+                            placeholder: '选择学期',
+                            options: [
                               if (!english)
-                                const DropdownMenuItem(
+                                const AdaptiveSelectOption(
                                   value: '',
-                                  child: Text('全部学期'),
+                                  label: '全部学期',
                                 ),
                               for (final t in terms.entries)
-                                DropdownMenuItem(
+                                AdaptiveSelectOption(
                                   value: t.key,
-                                  child: Text(t.value),
+                                  label: t.value,
                                 ),
                             ],
-                            onChanged: busy
-                                ? null
-                                : (v) {
-                                    setState(() {
-                                      term = (v == null || v.isEmpty) ? null : v;
-                                      _hypothetical.clear();
-                                      _omittedCourseIndices.clear();
-                                      _omittedTrialIds.clear();
-                                    });
-                                    if (english) unawaited(refresh());
-                                  },
+                            onChanged: (v) {
+                              setState(() {
+                                term = v.isEmpty ? null : v;
+                                _hypothetical.clear();
+                                _omittedCourseIndices.clear();
+                                _omittedTrialIds.clear();
+                              });
+                              if (english) unawaited(refresh());
+                            },
                           ),
                         ],
                         if (busy) ...[
@@ -394,9 +396,8 @@ class _GradesViewState extends State<_GradesView> {
                                     style: TpTypography.itemMeta(colors),
                                   ),
                                 const Divider(height: TpTokens.space5),
-                                SwitchListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: const Text('本地 GPA 试算'),
+                                AdaptiveSwitchRow(
+                                  title: '本地 GPA 试算',
                                   value: simulating,
                                   onChanged: (v) => setState(() {
                                     simulating = v;
@@ -524,7 +525,11 @@ class _GradesViewState extends State<_GradesView> {
     final colors = context.tpColors;
     return ListTile(
       leading: simulating
-          ? Checkbox(value: included, onChanged: (_) => onToggle())
+          ? AdaptiveCheckbox(
+              value: included,
+              semanticLabel: grade.courseName,
+              onChanged: (_) => onToggle(),
+            )
           : null,
       title: Row(
         children: [

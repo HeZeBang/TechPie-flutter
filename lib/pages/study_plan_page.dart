@@ -11,6 +11,8 @@ import '../theme/theme.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
+import '../widgets/adaptive_segmented_control.dart';
+import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/campus_prerequisite_view.dart';
@@ -271,14 +273,11 @@ class _StudyPlanPageState extends State<StudyPlanPage> {
                           ),
                           const SizedBox(height: TpTokens.space3),
                         ],
-                        SegmentedButton<bool>(
-                          segments: const [
-                            ButtonSegment(value: false, label: Text('完成进度')),
-                            ButtonSegment(value: true, label: Text('完整方案')),
-                          ],
-                          selected: {_full},
-                          onSelectionChanged: (next) {
-                            setState(() => _full = next.single);
+                        AdaptiveSegmentedControl(
+                          value: _full ? 1 : 0,
+                          segments: const ['完成进度', '完整方案'],
+                          onChanged: (idx) {
+                            setState(() => _full = idx == 1);
                             unawaited(_load());
                           },
                         ),
@@ -302,9 +301,8 @@ class _StudyPlanPageState extends State<StudyPlanPage> {
                           onChanged: (v) =>
                               setState(() => _query = v.trim().toLowerCase()),
                         ),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('仅看未完成'),
+                        AdaptiveSwitchRow(
+                          title: '仅看未完成',
                           value: _unfinished,
                           onChanged: (v) => setState(() => _unfinished = v),
                         ),

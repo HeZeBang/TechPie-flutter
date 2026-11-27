@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 
 import '../services/service_provider.dart';
@@ -8,6 +7,7 @@ import '../theme/theme.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_segmented_control.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
@@ -183,74 +183,74 @@ class _OaGymPageState extends State<OaGymPage>
                   0,
                 ),
                 child: TpPageBody(
-                  child: AdaptiveNavigationScaffold.adaptiveChrome(
-                    ios: () => CNSegmentedControl(
-                      labels: const ['预约', '查询', '个人信息'],
-                      selectedIndex: _selectedTab,
+                  child: AdaptiveNavigationScaffold.adaptiveAppleChrome(
+                    apple: () => AdaptiveSegmentedControl(
+                      value: _selectedTab,
+                      segments: const ['预约', '查询', '个人信息'],
                       shrinkWrap: true,
-                      onValueChanged: _tabController.animateTo,
+                      onChanged: _tabController.animateTo,
                     ),
                     material: () => TpCard(
-                      borderRadius: TpTokens.radiusS,
-                      child: TabBar(
-                        controller: _tabController,
-                        dividerColor: Colors.transparent,
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        labelColor: colors.brandInk,
-                        unselectedLabelColor: colors.textMuted,
-                        indicatorColor: colors.brand,
-                        tabs: const [
-                          Tab(
-                            height: 44,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(TpIcons.calendarCheck, size: 16),
-                                SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    '预约',
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                          borderRadius: TpTokens.radiusS,
+                          child: TabBar(
+                            controller: _tabController,
+                            dividerColor: Colors.transparent,
+                            indicatorSize: TabBarIndicatorSize.tab,
+                            labelColor: colors.brandInk,
+                            unselectedLabelColor: colors.textMuted,
+                            indicatorColor: colors.brand,
+                            tabs: const [
+                              Tab(
+                                height: 44,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(TpIcons.calendarCheck, size: 16),
+                                    SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        '预约',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ),
-                          Tab(
-                            height: 44,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(TpIcons.search, size: 16),
-                                SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    '查询',
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                              ),
+                              Tab(
+                                height: 44,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(TpIcons.search, size: 16),
+                                    SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        '查询',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
-                          ),
-                          Tab(
-                            height: 44,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(TpIcons.profile, size: 16),
-                                SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    '个人信息',
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                              ),
+                              Tab(
+                                height: 44,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(TpIcons.profile, size: 16),
+                                    SizedBox(width: 6),
+                                    Flexible(
+                                      child: Text(
+                                        '个人信息',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
                   ),
                 ),
               ),

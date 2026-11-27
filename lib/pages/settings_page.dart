@@ -1257,28 +1257,12 @@ class _ProxySettingsDialogState extends State<_ProxySettingsDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('启用应用代理', style: TpTypography.itemTitle(colors)),
-                      const SizedBox(height: 2),
-                      Text(
-                        '使用自定义 HTTP 代理转发请求',
-                        style: TpTypography.itemMeta(colors),
-                      ),
-                    ],
-                  ),
-                ),
-                AdaptiveSwitch(
-                  key: const ValueKey('settings.app-proxy-enabled'),
-                  value: _enabled,
-                  onChanged: (value) => setState(() => _enabled = value),
-                ),
-              ],
+            AdaptiveSwitchRow(
+              key: const ValueKey('settings.app-proxy-enabled'),
+              title: '启用应用代理',
+              subtitle: '使用自定义 HTTP 代理转发请求',
+              value: _enabled,
+              onChanged: (value) => setState(() => _enabled = value),
             ),
             const SizedBox(height: TpTokens.space3),
             TextField(

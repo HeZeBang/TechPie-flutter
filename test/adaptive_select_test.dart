@@ -182,4 +182,114 @@ void main() {
       expect(colorCalls.map((call) => call.method), contains('getIntrinsicSize'));
     },
   );
+
+  testWidgets(
+    'macOS AdaptiveSelect renders AppKitView and updates selection',
+    variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+    (tester) async {
+      final messenger = tester.binding.defaultBinaryMessenger;
+      final callsById = <int, List<MethodCall>>{};
+      messenger.setMockMethodCallHandler(SystemChannels.platform_views, (call) async {
+        if (call.method == 'create') {
+          final id = (call.arguments as Map<Object?, Object?>)['id'] as int;
+          final calls = callsById[id] = [];
+          messenger.setMockMethodCallHandler(
+            MethodChannel('TechPieMacPopUpButton_$id'),
+            (call) async {
+              calls.add(call);
+              if (call.method == 'getIntrinsicSize') return {'width': 120.0};
+              return null;
+            },
+          );
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform_views, null),
+      );
+
+      String value = 'system';
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) => Scaffold(
+              body: AdaptiveSelect(
+                label: '主题模式',
+                value: value,
+                shrinkWrap: true,
+                options: const [
+                  AdaptiveSelectOption(value: 'system', label: '跟随系统'),
+                  AdaptiveSelectOption(value: 'dark', label: '深色'),
+                ],
+                onChanged: (next) => setState(() => value = next),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('主题模式'), findsOneWidget);
+      final view = tester.widget<AppKitView>(find.byType(AppKitView));
+      expect(view.viewType, 'TechPieMacPopUpButton');
+
+      final id = callsById.keys.single;
+      final codec = const StandardMethodCodec();
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage(
+        'TechPieMacPopUpButton_$id',
+        codec.encodeMethodCall(
+          const MethodCall('itemSelected', {'index': 1}),
+        ),
+        (_) {},
+      );
+      await tester.pumpAndSettle();
+      expect(value, 'dark');
+    },
+  );
+
+  testWidgets(
+    'iOS direct UIKit flag switches AdaptiveSelect to UiKitView',
+    variant: TargetPlatformVariant.only(TargetPlatform.iOS),
+    (tester) async {
+      debugForceDirectIosUiKitViews = true;
+      addTearDown(() => debugForceDirectIosUiKitViews = false);
+
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform_views, (call) async {
+        if (call.method == 'create') {
+          final id = (call.arguments as Map<Object?, Object?>)['id'] as int;
+          messenger.setMockMethodCallHandler(
+            MethodChannel('CupertinoNativePopupMenuButton_$id'),
+            (call) async {
+              if (call.method == 'getIntrinsicSize') return {'width': 96.0};
+              return null;
+            },
+          );
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform_views, null),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AdaptiveSelect(
+              value: 'a',
+              options: const [
+                AdaptiveSelectOption(value: 'a', label: 'A'),
+                AdaptiveSelectOption(value: 'b', label: 'B'),
+              ],
+              onChanged: (_) {},
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final view = tester.widget<UiKitView>(find.byType(UiKitView));
+      expect(view.viewType, 'CupertinoNativePopupMenuButton');
+    },
+  );
 }

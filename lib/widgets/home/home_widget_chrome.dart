@@ -10,6 +10,7 @@ import '../../theme/theme.dart';
 import '../../utils/adaptive_motion.dart';
 import '../../utils/haptics.dart';
 import '../../utils/motion.dart';
+import '../adaptive_context_menu.dart';
 import '../design_system/design_system.dart';
 import 'home_mobile_reorder_list.dart';
 
@@ -132,73 +133,54 @@ class HomeEditableCardFrame extends StatefulWidget {
 
 class _HomeEditableCardFrameState extends State<HomeEditableCardFrame> {
   Future<void> _showDesktopContextMenu(TapDownDetails details) async {
-    final overlay = Overlay.maybeOf(context)?.context.findRenderObject();
-    if (overlay is! RenderBox) return;
-    final colors = context.tpColors;
     final meta = homeWidgetMetaFor(widget.id);
-    final pos = details.globalPosition;
 
-    final action = await showMenu<String>(
+    final action = await showAdaptiveContextMenu<String>(
       context: context,
-      color: colors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(TpTokens.radiusM),
-        side: BorderSide(color: colors.divider),
-      ),
-      position: RelativeRect.fromLTRB(
-        pos.dx,
-        pos.dy,
-        overlay.size.width - pos.dx,
-        overlay.size.height - pos.dy,
-      ),
+      globalPosition: details.globalPosition,
       items: [
         if (!widget.isEditing && widget.onEnterEditMode != null)
-          const PopupMenuItem<String>(
+          const AdaptiveContextMenuItem<String>(
             value: 'edit',
-            child: _ContextMenuLabel(
-              icon: TpIcons.dashboard,
-              label: '编辑主页布局',
-            ),
+            icon: TpIcons.dashboard,
+            sfSymbol: 'square.grid.2x2',
+            label: '编辑主页布局',
           ),
         if (widget.id == HomeWidgetId.campusCard &&
             widget.campusCardStyle != null &&
             widget.onCampusCardStyleChanged != null)
-          PopupMenuItem<String>(
+          AdaptiveContextMenuItem<String>(
             value: 'toggle_card_style',
-            child: _ContextMenuLabel(
-              icon: TpIcons.campusCard,
-              label: widget.campusCardStyle == HomeCampusCardStyle.full
-                  ? '切换为精简校园卡'
-                  : '切换为完整校园卡',
-            ),
+            icon: TpIcons.campusCard,
+            sfSymbol: 'creditcard',
+            label: widget.campusCardStyle == HomeCampusCardStyle.full
+                ? '切换为精简校园卡'
+                : '切换为完整校园卡',
           ),
         if (widget.id == HomeWidgetId.quickActions &&
             widget.onConfigureQuickActions != null)
-          PopupMenuItem<String>(
+          AdaptiveContextMenuItem<String>(
             value: 'configure_quick_actions',
-            child: _ContextMenuLabel(
-              icon: TpIcons.sliders,
-              label: '定制${meta.title}',
-            ),
+            icon: TpIcons.sliders,
+            sfSymbol: 'slider.horizontal.3',
+            label: '定制${meta.title}',
           ),
         if (widget.onSwapColumn != null)
-          PopupMenuItem<String>(
+          AdaptiveContextMenuItem<String>(
             value: 'swap_column',
-            child: _ContextMenuLabel(
-              icon: TpIcons.swapColumns,
-              label: widget.column == HomeBentoColumn.primary
-                  ? '移至副栏'
-                  : '移至主栏',
-            ),
+            icon: TpIcons.swapColumns,
+            sfSymbol: 'arrow.left.arrow.right',
+            label: widget.column == HomeBentoColumn.primary
+                ? '移至副栏'
+                : '移至主栏',
           ),
         if (widget.onRemove != null)
-          PopupMenuItem<String>(
+          AdaptiveContextMenuItem<String>(
             value: 'remove',
-            child: _ContextMenuLabel(
-              icon: TpIcons.minus,
-              label: '隐藏${meta.title}',
-              destructive: true,
-            ),
+            icon: TpIcons.minus,
+            sfSymbol: 'eye.slash',
+            label: '隐藏${meta.title}',
+            destructive: true,
           ),
       ],
     );
@@ -1083,32 +1065,6 @@ class _SmallIconAction extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ContextMenuLabel extends StatelessWidget {
-  const _ContextMenuLabel({
-    required this.icon,
-    required this.label,
-    this.destructive = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool destructive;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.tpColors;
-    final fg = destructive ? colors.dangerRed : colors.textPrimary;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: TpTokens.iconS, color: fg),
-        const SizedBox(width: TpTokens.space2),
-        Text(label, style: TpTypography.itemTitle(colors).copyWith(color: fg)),
-      ],
     );
   }
 }

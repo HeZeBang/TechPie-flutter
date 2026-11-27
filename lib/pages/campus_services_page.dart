@@ -8,6 +8,7 @@ import '../services/service_provider.dart';
 import '../services/storage_service.dart';
 import '../theme/theme.dart';
 import '../utils/haptics.dart';
+import '../widgets/adaptive_checkbox.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -489,35 +490,38 @@ class _HomeShortcutEditorPageState extends State<HomeShortcutEditorPage> {
                 title: '选择服务',
                 child: Column(
                   children: [
-                    for (final f in _available.values)
-                      CheckboxListTile(
-                        secondary: Icon(
-                          f.icon.icon ?? TpIcons.activities,
-                          color: colors.brandInk,
-                        ),
-                        title: Text(f.description),
-                        subtitle: Text(
-                          f.subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        value: _selected.contains(f.id),
-                        onChanged: _saving ||
-                                (!_selected.contains(f.id) &&
-                                    _selected.length == maxPinnedQuickFeatures)
-                            ? null
-                            : (checked) {
-                                unawaited(
-                                  AppHaptics.play(AppHaptics.selection),
-                                );
-                                setState(() {
-                                  if (checked == true) {
-                                    _selected.add(f.id);
-                                  } else {
-                                    _selected.remove(f.id);
-                                  }
-                                });
-                              },
+                    for (var i = 0; i < _available.length; i++)
+                      Builder(
+                        builder: (context) {
+                          final f = _available.values.elementAt(i);
+                          final disabled = _saving ||
+                              (!_selected.contains(f.id) &&
+                                  _selected.length == maxPinnedQuickFeatures);
+                          return AdaptiveCheckboxRow(
+                            title: f.description,
+                            subtitle: f.subtitle,
+                            trailing: Icon(
+                              f.icon.icon ?? TpIcons.activities,
+                              color: colors.brandInk,
+                            ),
+                            showDivider: i < _available.length - 1,
+                            value: _selected.contains(f.id),
+                            onChanged: disabled
+                                ? null
+                                : (checked) {
+                                    unawaited(
+                                      AppHaptics.play(AppHaptics.selection),
+                                    );
+                                    setState(() {
+                                      if (checked == true) {
+                                        _selected.add(f.id);
+                                      } else {
+                                        _selected.remove(f.id);
+                                      }
+                                    });
+                                  },
+                          );
+                        },
                       ),
                   ],
                 ),

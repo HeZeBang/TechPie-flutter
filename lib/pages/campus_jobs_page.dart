@@ -14,6 +14,7 @@ import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_segmented_control.dart';
+import '../widgets/adaptive_switch.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
 import '../widgets/egate_visit.dart';
@@ -549,12 +550,11 @@ class _JobApplyDialogState extends State<_JobApplyDialog> {
                 decoration: const InputDecoration(labelText: '自我介绍（选填）'),
               ),
               if (!ta)
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('服从跨部门调剂'),
+                AdaptiveSwitchRow(
+                  title: '服从跨部门调剂',
                   value: acceptAdjustment,
-                  onChanged:
-                      busy ? null : (v) => setState(() => acceptAdjustment = v),
+                  enabled: !busy,
+                  onChanged: (v) => setState(() => acceptAdjustment = v),
                 ),
               if (error != null) ...[
                 const SizedBox(height: TpTokens.space2),

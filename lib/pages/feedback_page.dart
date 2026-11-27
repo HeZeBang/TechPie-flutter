@@ -9,6 +9,7 @@ import '../services/usage_telemetry.dart';
 import '../theme/theme.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
+import '../widgets/adaptive_checkbox.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
@@ -418,25 +419,22 @@ class _FeedbackPageState extends State<FeedbackPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            CheckboxListTile(
-                              title: const Text('发送用户名'),
+                            AdaptiveCheckboxRow(
+                              title: '发送用户名',
                               value: _includeUsername,
+                              showDivider: true,
                               onChanged: _busy
                                   ? null
                                   : (value) =>
                                       setState(() => _includeUsername = value!),
-                              controlAffinity: ListTileControlAffinity.leading,
-                              contentPadding: EdgeInsets.zero,
                             ),
-                            CheckboxListTile(
-                              title: const Text('发送邮箱'),
+                            AdaptiveCheckboxRow(
+                              title: '发送邮箱',
                               value: _includeEmail,
                               onChanged: _busy
                                   ? null
                                   : (value) =>
                                       setState(() => _includeEmail = value!),
-                              controlAffinity: ListTileControlAffinity.leading,
-                              contentPadding: EdgeInsets.zero,
                             ),
                             const SizedBox(height: TpTokens.space2),
                             TextField(

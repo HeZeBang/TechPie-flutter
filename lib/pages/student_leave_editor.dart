@@ -10,6 +10,7 @@ import '../theme/theme.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_select.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
 
@@ -522,21 +523,52 @@ class _LeaveEditorState extends State<_LeaveEditor> {
     Map<String, String> options,
     ValueChanged<String?> onChanged, {
     bool required = false,
-  }) =>
-      Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: DropdownButtonFormField<String>(
-          key: ValueKey((label, selected, options.length)),
-          isExpanded: true,
-          initialValue: options.containsKey(selected) ? selected : null,
-          decoration: InputDecoration(labelText: label),
-          items: [
-            for (final e in options.entries) DropdownMenuItem(value: e.key, child: Text(e.value)),
-          ],
-          onChanged: options.isEmpty ? null : onChanged,
-          validator: (v) => required && v == null ? '请选择$label' : null,
-        ),
-      );
+  }) {
+    final validValue = options.containsKey(selected) ? selected : null;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: FormField<String>(
+        key: ValueKey((label, selected, options.length)),
+        initialValue: validValue,
+        validator: (v) =>
+            required && (v == null || v.isEmpty) ? '请选择$label' : null,
+        builder: (field) {
+          final colors = context.tpColors;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AdaptiveSelect(
+                label: label,
+                width: double.infinity,
+                enabled: options.isNotEmpty,
+                value: field.value,
+                placeholder: '请选择$label',
+                options: [
+                  for (final e in options.entries)
+                    AdaptiveSelectOption(value: e.key, label: e.value),
+                ],
+                onChanged: (v) {
+                  field.didChange(v);
+                  onChanged(v);
+                },
+              ),
+              if (field.hasError)
+                Padding(
+                  padding: const EdgeInsets.only(top: TpTokens.space1),
+                  child: Text(
+                    field.errorText!,
+                    style: TpTypography.itemMeta(colors).copyWith(
+                      color: colors.dangerRed,
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
   Widget field(String code, String label, {TextInputType? keyboard, int lines = 1, int? limit}) =>
       Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),

@@ -29,6 +29,7 @@ import '../utils/user_display_name.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_slider.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
@@ -1469,11 +1470,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                       const SizedBox(width: TpTokens.space2),
                       Expanded(
-                        child: Slider(
+                        child: AdaptiveSlider(
                           value: minutes,
                           min: 0,
                           max: 1439,
                           divisions: 1439,
+                          semanticLabel: 'Time of day',
                           onChanged: _debugSetTime,
                         ),
                       ),

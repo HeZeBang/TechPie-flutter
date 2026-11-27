@@ -4,6 +4,7 @@ import '../models/student_leave.dart';
 import '../services/campus/campus_errors.dart';
 import '../services/student_leave_service.dart';
 import '../theme/theme.dart';
+import '../widgets/adaptive_select.dart';
 import '../widgets/design_system/design_system.dart';
 import 'student_leave_editor.dart';
 
@@ -113,14 +114,23 @@ class _StudentLeaveApplicationState extends State<StudentLeaveApplication> {
                         if (!data.eligible)
                           Text(data.reason.isEmpty ? '当前无法申请请假' : data.reason)
                         else ...[
-                          DropdownButtonFormField<String>(
-                            decoration: const InputDecoration(labelText: '请假性质'),
-                            items: [
+                          AdaptiveSelect(
+                            label: '请假性质',
+                            width: double.infinity,
+                            value: data.properties.containsKey(property)
+                                ? property
+                                : null,
+                            placeholder: '请选择请假性质',
+                            options: [
                               for (final entry in data.properties.entries)
-                                DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+                                AdaptiveSelectOption(
+                                  value: entry.key,
+                                  label: entry.value,
+                                ),
                             ],
                             onChanged: selectProperty,
                           ),
+                          const SizedBox(height: TpTokens.space3),
                           if (types != null)
                             FutureBuilder<List<LeaveKind>>(
                               future: types,
@@ -134,18 +144,35 @@ class _StudentLeaveApplicationState extends State<StudentLeaveApplication> {
                                 if (result.requireData.isEmpty) {
                                   return const Text('当前性质下没有可选假种');
                                 }
-                                return DropdownButtonFormField<LeaveKind>(
-                                  key: ValueKey(property),
-                                  decoration: const InputDecoration(labelText: '请假类型'),
-                                  items: [
-                                    for (final item in result.requireData)
-                                      DropdownMenuItem(value: item, child: Text(item.label)),
-                                  ],
-                                  onChanged: (value) => setState(() {
-                                    kind = value;
-                                    dates = null;
-                                    courses = null;
-                                  }),
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: TpTokens.space3),
+                                  child: AdaptiveSelect(
+                                    key: ValueKey(property),
+                                    label: '请假类型',
+                                    width: double.infinity,
+                                    value: result.requireData
+                                            .any((item) => item.id == kind?.id)
+                                        ? kind?.id
+                                        : null,
+                                    placeholder: '请选择请假类型',
+                                    options: [
+                                      for (final item in result.requireData)
+                                        AdaptiveSelectOption(
+                                          value: item.id,
+                                          label: item.label,
+                                        ),
+                                    ],
+                                    onChanged: (value) {
+                                      final matched = result.requireData
+                                          .where((item) => item.id == value)
+                                          .firstOrNull;
+                                      setState(() {
+                                        kind = matched;
+                                        dates = null;
+                                        courses = null;
+                                      });
+                                    },
+                                  ),
                                 );
                               },
                             ),
