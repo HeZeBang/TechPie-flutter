@@ -12,7 +12,7 @@ import 'package:techpie/main.dart';
 import 'package:techpie/models/assignment.dart';
 import 'package:techpie/pages/assignments_page.dart';
 import 'package:techpie/pages/campus_card_account_page.dart';
-import 'package:techpie/pages/custom_deadline_editor_page.dart';
+import 'package:techpie/pages/deadline_editor_page.dart';
 import 'package:techpie/pages/hidden_assignments_page.dart';
 import 'package:techpie/pages/settings_page.dart';
 import 'package:techpie/pages/third_party_accounts_page.dart';
@@ -105,7 +105,7 @@ void main() {
       tester.widget<CNTabBar>(find.byType(CNTabBar)).onTap(index);
 
   testWidgets(
-    'a guest can add a deadline and edit it from Home',
+    'a guest can view a custom deadline on Home and edit it from Deadlines',
     (tester) async {
       await pumpApp(tester);
       selectTab(tester, 2);
@@ -149,7 +149,16 @@ void main() {
       );
       await tester.tap(find.text('Submit report'));
       await tester.pumpAndSettle();
-      expect(find.byType(CustomDeadlineEditorPage), findsOneWidget);
+      expect(find.byType(DeadlineEditorPage), findsNothing);
+      expect(find.byType(DeadlineEditButton), findsNothing);
+
+      selectTab(tester, 2);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Deadline 操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('编辑'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DeadlineEditorPage), findsOneWidget);
       await tester.ensureVisible(find.text('标记完成'));
       await tester.tap(find.text('标记完成'));
       await tester.pumpAndSettle();

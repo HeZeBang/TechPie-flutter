@@ -38,6 +38,7 @@ class Assignment {
   final DeadlineKind kind;
   final String title;
   final String course;
+  final String notes;
   final DateTime due;
   final DateTime? lateDue;
   final String? status;
@@ -49,6 +50,7 @@ class Assignment {
     this.kind = DeadlineKind.assignment,
     required this.title,
     required this.course,
+    this.notes = '',
     required this.due,
     this.lateDue,
     this.status,
@@ -68,7 +70,10 @@ class Assignment {
   /// their primary [due] time as the final deadline.
   bool get supportsLateDue => platform.toLowerCase() == 'gradescope';
 
-  DateTime? get effectiveLateDue => supportsLateDue ? lateDue : null;
+  DateTime? get effectiveLateDue {
+    final late = lateDue;
+    return supportsLateDue && late != null && !late.isBefore(due) ? late : null;
+  }
 
   DateTime get effectiveDue => effectiveLateDue ?? due;
 
@@ -115,6 +120,7 @@ class Assignment {
       kind: kind,
       title: json['title'] as String? ?? '',
       course: json['course'] as String? ?? '',
+      notes: json['notes'] is String ? json['notes'] as String : '',
       due: due,
       lateDue: lateDue,
       status: json['status'] as String?,
@@ -128,6 +134,7 @@ class Assignment {
         'kind': kind.id,
         'title': title,
         'course': course,
+        if (notes.isNotEmpty) 'notes': notes,
         'due': due.millisecondsSinceEpoch ~/ 1000,
         if (lateDue != null) 'lateDue': lateDue!.millisecondsSinceEpoch ~/ 1000,
         'status': status,
@@ -137,7 +144,6 @@ class Assignment {
 
 class CustomDeadline extends Assignment {
   final String location;
-  final String notes;
   final bool completed;
   final int? reminderCompletedAt;
 
@@ -147,7 +153,7 @@ class CustomDeadline extends Assignment {
     required super.course,
     required super.due,
     this.location = '',
-    this.notes = '',
+    super.notes,
     this.completed = false,
     this.reminderCompletedAt,
   }) : super(platform: 'custom', kind: DeadlineKind.custom);
@@ -184,7 +190,6 @@ class CustomDeadline extends Assignment {
   Map<String, dynamic> toJson() => {
         ...super.toJson(),
         if (location.isNotEmpty) 'location': location,
-        if (notes.isNotEmpty) 'notes': notes,
         'completed': completed,
         if (reminderCompletedAt != null)
           'reminderCompletedAt': reminderCompletedAt,

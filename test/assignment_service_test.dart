@@ -305,6 +305,71 @@ void main() {
     expect(service.isCompleted(service.assignments.single), isTrue);
   });
 
+  test('imported edits survive refresh and reload within their source binding', () async {
+    final originalDue = DateTime.utc(2027, 1, 4, 12, 30, 45);
+    final originalLateDue = originalDue.add(const Duration(days: 1));
+    final editedDue = originalDue.add(const Duration(hours: 2));
+    final initial = {
+      ..._assignmentJson(id: 'same-id', platform: 'gradescope', due: originalDue),
+      'lateDue': originalLateDue.millisecondsSinceEpoch ~/ 1000,
+      'url': 'https://example.test/assignment/same-id',
+    };
+    final latest = {
+      ...initial,
+      'title': 'Updated by source',
+      'due': originalDue.subtract(const Duration(hours: 2)).millisecondsSinceEpoch ~/ 1000,
+      'status': 'Submitted',
+    };
+    final fixture = await _identityFixture(
+      (_, __) => http.Response(
+        jsonEncode({'success': true, 'data': [latest]}),
+        200,
+      ),
+      cached: [initial],
+    );
+    final service = fixture.service;
+    final original = service.assignments.single;
+    final oldEpoch = service.identityEpoch;
+    await expectLater(
+      service.saveImportedDeadlineEdit(
+        original,
+        epoch: oldEpoch,
+        lateDue: originalDue.subtract(const Duration(minutes: 1)),
+      ),
+      throwsArgumentError,
+    );
+    await service.saveImportedDeadlineEdit(original, epoch: oldEpoch, notes: 'Bring notes');
+    expect(service.assignments.single.due.toUtc(), originalDue);
+    await service.saveImportedDeadlineEdit(original, epoch: oldEpoch, due: editedDue);
+
+    await service.fetchPlatform('gradescope');
+    service.loadCached();
+    final edited = service.assignments.single;
+    expect(edited.due.toUtc(), editedDue);
+    expect(edited.title, 'Updated by source');
+    expect(edited.notes, 'Bring notes');
+    expect(edited.url, original.url);
+    expect(edited.effectiveLateDue?.toUtc(), originalLateDue);
+    expect(service.isCompleted(edited), isTrue);
+    expect(fixture.storage.loadCachedAssignments().single, isNot(contains('notes')));
+
+    await fixture.thirdParty.replaceAll([_gradescopeAccount('new-account', 'new-token')]);
+    await service.fetchPlatform('gradescope');
+    expect(service.hasImportedDeadlineEdit(service.assignments.single), isFalse);
+    await expectLater(
+      service.saveImportedDeadlineEdit(original, epoch: oldEpoch, title: 'Stale draft'),
+      throwsStateError,
+    );
+
+    await fixture.thirdParty.replaceAll([_gradescopeAccount('old-account', 'old-token')]);
+    await service.fetchPlatform('gradescope');
+    expect(service.assignments.single.due.toUtc(), editedDue);
+    await service.restoreImportedDeadline(edited, epoch: service.identityEpoch);
+    service.loadCached();
+    expect(service.assignments.single.due.millisecondsSinceEpoch ~/ 1000, latest['due']);
+    expect(service.assignments.single.notes, isEmpty);
+  });
+
   test('scopes matching legacy reminder completions and keeps manual overrides', () async {
     final fixture = await _identityFixture(
       (_, __) => http.Response(

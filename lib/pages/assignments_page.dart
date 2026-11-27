@@ -28,7 +28,7 @@ import '../widgets/desktop_popup.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 import '../widgets/swipeable_card.dart';
-import 'custom_deadline_editor_page.dart';
+import 'deadline_editor_page.dart';
 import 'hidden_assignments_page.dart';
 import 'third_party_accounts_page.dart';
 
@@ -428,7 +428,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
             case 'toggleExams':
               _toggleExamsVisibility();
             case 'addDeadline':
-              unawaited(CustomDeadlineEditorPage.open(context));
+              unawaited(DeadlineEditorPage.open(context));
             case 'manageReminders':
               unawaited(_enterReminderSelection(service, reminders, visible));
             case 'hidden':
@@ -474,7 +474,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                   case 'toggleExams':
                     _toggleExamsVisibility();
                   case 'addDeadline':
-                    unawaited(CustomDeadlineEditorPage.open(context));
+                    unawaited(DeadlineEditorPage.open(context));
                   case 'manageReminders':
                     unawaited(
                       _enterReminderSelection(service, reminders, visible),
@@ -592,7 +592,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
                 title: Text('添加 Deadline', style: TpTypography.itemTitle(colors)),
                 onTap: () {
                   close();
-                  unawaited(CustomDeadlineEditorPage.open(context));
+                  unawaited(DeadlineEditorPage.open(context));
                 },
               ),
               if (reminders != null)
@@ -1229,10 +1229,17 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
       selected: selected,
       selectionMode: _selectionMode && !_loadingReminders,
       showDivider: !isLast,
-      onTap: () => unawaited(_onTapItem(context, service, a, selectionKey)),
+      onTap: _selectionMode
+          ? () => _toggleSelection(selectionKey)
+          : a is CustomDeadline
+              ? null
+              : () => unawaited(_openAssignmentUrl(context, a)),
       onLongPress: _selectionMode
           ? null
           : () => _enterSelectionWith(service, key, epoch),
+      editAction: !_selectionMode && a.kind != DeadlineKind.exam
+          ? DeadlineEditButton(assignment: a)
+          : null,
       onQuickToggleComplete: isDesktop() && !_selectionMode
           ? () => unawaited(_toggleCompleted(context, service, a))
           : null,
@@ -1311,20 +1318,7 @@ class _AssignmentsPageState extends State<AssignmentsPage> {
     );
   }
 
-  Future<void> _onTapItem(
-    BuildContext context,
-    AssignmentService service,
-    Assignment a,
-    String key,
-  ) async {
-    if (_selectionMode) {
-      _toggleSelection(key);
-      return;
-    }
-    if (a is CustomDeadline) {
-      await CustomDeadlineEditorPage.open(context, deadline: a);
-      return;
-    }
+  Future<void> _openAssignmentUrl(BuildContext context, Assignment a) async {
     final url = a.url;
     if (url == null || url.isEmpty) {
       final itemLabel = a.kind == DeadlineKind.exam ? '考试' : '作业';
@@ -1623,8 +1617,9 @@ class _AssignmentRow extends StatefulWidget {
   final bool selected;
   final bool selectionMode;
   final bool showDivider;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   final VoidCallback? onLongPress;
+  final Widget? editAction;
   final VoidCallback? onQuickToggleComplete;
   final VoidCallback? onQuickHide;
 
@@ -1637,6 +1632,7 @@ class _AssignmentRow extends StatefulWidget {
     required this.showDivider,
     required this.onTap,
     required this.onLongPress,
+    this.editAction,
     this.onQuickToggleComplete,
     this.onQuickHide,
   });
@@ -1646,6 +1642,9 @@ class _AssignmentRow extends StatefulWidget {
 }
 
 class _AssignmentRowState extends State<_AssignmentRow> {
+  // End padding for the countdown and more button on touch layouts.
+  static const double _editRowEndPadding = TpTokens.space2;
+
   bool _hovered = false;
 
   @override
@@ -1682,10 +1681,7 @@ class _AssignmentRowState extends State<_AssignmentRow> {
         ].join(' · '),
       _ => assignment.course.trim(),
     };
-    final notes = switch (assignment) {
-      CustomDeadline(:final notes) => notes.trim(),
-      _ => '',
-    };
+    final notes = assignment.notes.trim();
 
     final Color urgencyColor = () {
       if (completed) return colors.successGreen;
@@ -1734,6 +1730,9 @@ class _AssignmentRowState extends State<_AssignmentRow> {
 
     final showQuickActions =
         widget.onQuickToggleComplete != null || widget.onQuickHide != null;
+    final headerEndPadding = widget.editAction != null && !isDesktop()
+        ? _editRowEndPadding
+        : TpTokens.cardPaddingHorizontal;
 
     final Widget countdownWidget = completed
         ? Row(
@@ -1814,9 +1813,11 @@ class _AssignmentRowState extends State<_AssignmentRow> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: TpTokens.cardPaddingHorizontal,
-                    vertical: 11,
+                  padding: const EdgeInsetsDirectional.fromSTEB(
+                    TpTokens.cardPaddingHorizontal,
+                    11,
+                    0,
+                    11,
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1906,6 +1907,7 @@ class _AssignmentRowState extends State<_AssignmentRow> {
                             ),
                             child: countdownWidget,
                           ),
+                          if (widget.editAction case final action?) action,
                           if (showQuickActions) ...[
                             const SizedBox(width: 6),
                             AnimatedOpacity(
@@ -1967,80 +1969,92 @@ class _AssignmentRowState extends State<_AssignmentRow> {
                               ),
                             ),
                           ],
+                          SizedBox(width: headerEndPadding),
                         ],
                       ),
                       const SizedBox(height: 3),
-                      // Row 2: Single subtle metadata line (course · platform | due time).
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              metaLeft.isNotEmpty
-                                  ? metaLeft
-                                  : (assignment is CustomDeadline
-                                      ? '自定义截止事项'
-                                      : '截止事项'),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TpTypography.itemMeta(colors).copyWith(
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: TpTokens.space2),
-                          if (completedStatusLabel != null) ...[
-                            Text(
-                              completedStatusLabel,
-                              maxLines: 1,
-                              style: TpTypography.itemMeta(colors).copyWith(
-                                fontSize: 11.5,
-                                color: colors.successGreen,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            Text(
-                              ' · $dueShort',
-                              maxLines: 1,
-                              style: TpTypography.itemMeta(colors).copyWith(
-                                fontSize: 11.5,
-                              ),
-                            ),
-                          ] else
-                            Text(
-                              dueText,
-                              maxLines: 1,
-                              style: TpTypography.itemMeta(colors).copyWith(
-                                fontSize: 11.5,
-                                color: !completed && (isPast || isLateWindow)
-                                    ? colors.dangerRed
-                                    : colors.textMuted,
-                                fontWeight:
-                                    !completed && (isPast || isLateWindow)
-                                        ? FontWeight.w500
-                                        : FontWeight.w400,
-                              ),
-                            ),
-                        ],
-                      ),
-                      if (notes.isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          notes,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TpTypography.itemMeta(colors).copyWith(
-                            fontSize: 12,
-                          ),
+                      Padding(
+                        padding: const EdgeInsetsDirectional.only(
+                          end: TpTokens.cardPaddingHorizontal,
                         ),
-                      ],
-                      const SizedBox(height: TpTokens.space2),
-                      // Row 3: Thin rounded urgency progress bar.
-                      TpProgressBar(
-                        progress: progress,
-                        color: completed
-                            ? urgencyColor.withValues(alpha: 0.45)
-                            : urgencyColor,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Row 2: Single subtle metadata line (course · platform | due time).
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    metaLeft.isNotEmpty
+                                        ? metaLeft
+                                        : (assignment is CustomDeadline
+                                            ? '自定义截止事项'
+                                            : '截止事项'),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TpTypography.itemMeta(colors).copyWith(
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: TpTokens.space2),
+                                if (completedStatusLabel != null) ...[
+                                  Text(
+                                    completedStatusLabel,
+                                    maxLines: 1,
+                                    style: TpTypography.itemMeta(colors).copyWith(
+                                      fontSize: 11.5,
+                                      color: colors.successGreen,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  Text(
+                                    ' · $dueShort',
+                                    maxLines: 1,
+                                    style: TpTypography.itemMeta(colors).copyWith(
+                                      fontSize: 11.5,
+                                    ),
+                                  ),
+                                ] else
+                                  Text(
+                                    dueText,
+                                    maxLines: 1,
+                                    style: TpTypography.itemMeta(colors).copyWith(
+                                      fontSize: 11.5,
+                                      color: !completed && (isPast || isLateWindow)
+                                          ? colors.dangerRed
+                                          : colors.textMuted,
+                                      fontWeight:
+                                          !completed && (isPast || isLateWindow)
+                                              ? FontWeight.w500
+                                              : FontWeight.w400,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            if (notes.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Text(
+                                notes,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TpTypography.itemMeta(colors).copyWith(
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                            const SizedBox(height: TpTokens.space2),
+                            // Row 3: Thin rounded urgency progress bar.
+                            TpProgressBar(
+                              progress: progress,
+                              color: completed
+                                  ? urgencyColor.withValues(alpha: 0.45)
+                                  : urgencyColor,
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),

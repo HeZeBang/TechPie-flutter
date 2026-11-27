@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart' show CupertinoDatePicker;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,8 +12,9 @@ import 'package:techpie/models/assignment_overrides.dart';
 import 'package:techpie/models/third_party_account.dart';
 import 'package:techpie/models/user_session.dart';
 import 'package:techpie/pages/assignments_page.dart';
-import 'package:techpie/pages/custom_deadline_editor_page.dart';
+import 'package:techpie/pages/deadline_editor_page.dart';
 import 'package:techpie/pages/hidden_assignments_page.dart';
+import 'package:techpie/pages/home_page.dart';
 import 'package:techpie/services/assignment_service.dart';
 import 'package:techpie/services/auth_service.dart';
 import 'package:techpie/services/campus_card_service.dart';
@@ -33,7 +35,9 @@ import 'package:techpie/services/uni_auth_service.dart';
 import 'package:techpie/services/update_service.dart';
 import 'package:techpie/widgets/adaptive_feedback.dart';
 import 'package:techpie/widgets/adaptive_navigation_scaffold.dart';
+import 'package:techpie/widgets/design_system/design_system.dart';
 import 'package:techpie/widgets/ios/ios_native_navigation_bar.dart';
+import 'package:techpie/widgets/schedule_picker_sheet.dart';
 import 'package:techpie/widgets/swipeable_card.dart';
 
 void main() {
@@ -498,6 +502,46 @@ void main() {
     expect(assignments.pendingReminderEdits, isEmpty);
   });
 
+  test('syncs imported deadline edits and restoration to the existing reminder', () async {
+    final imported = assignments.assignments.firstWhere((item) => item.platform == 'blackboard');
+    final key = assignments.reminderKeyFor(imported);
+    await reminders.add([imported]);
+    reminders.initialize();
+    await flush();
+    denyEdits = true;
+    final due = imported.due.add(const Duration(hours: 1));
+    await assignments.saveImportedDeadlineEdit(
+      imported,
+      epoch: assignments.identityEpoch,
+      title: 'Edited deadline',
+      notes: 'Bring notes',
+      due: due,
+    );
+    await flush();
+    expect(assignments.pendingReminderEdits.keys, [key]);
+
+    reminders.dispose();
+    denyEdits = false;
+    assignments.loadCached();
+    reminders.initialize();
+    await flush();
+    expect(edits.last[key], {
+      'title': 'Edited deadline',
+      'notes': 'Course\nBring notes',
+      'due': due.millisecondsSinceEpoch,
+    });
+    expect(assignments.pendingReminderEdits, isEmpty);
+
+    await assignments.restoreImportedDeadline(imported, epoch: assignments.identityEpoch);
+    await flush();
+    expect(edits.last[key], {
+      'title': imported.title,
+      'notes': imported.course,
+      'due': imported.due.millisecondsSinceEpoch,
+    });
+    expect(linkedKeys, {key});
+  });
+
   test('restarts a remote reminder removal after the undo window', () async {
     final assignment = assignments.assignments.first;
     await reminders.add([assignment]);
@@ -640,7 +684,14 @@ void main() {
 
       await tester.tap(find.text('Custom'));
       await tester.pumpAndSettle();
-      expect(find.byType(CustomDeadlineEditorPage), findsOneWidget);
+      expect(find.byType(DeadlineEditorPage), findsNothing);
+      final editAction = find.descendant(
+        of: find.ancestor(of: find.text('Custom'), matching: find.byType(SwipeableCard)),
+        matching: find.byTooltip('编辑 Deadline'),
+      );
+      await tester.tap(editAction);
+      await tester.pumpAndSettle();
+      expect(find.byType(DeadlineEditorPage), findsOneWidget);
       final location = find.byWidgetPredicate(
         (widget) => widget is EditableText && widget.controller.text == 'Room 101',
       );
@@ -649,7 +700,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(edits.single[key]?['location'], 'Room 202');
 
-      await tester.tap(find.text('Custom'));
+      await tester.tap(editAction);
       await tester.pumpAndSettle();
       await tester.tap(find.text('删除'));
       await tester.pumpAndSettle();
@@ -662,6 +713,89 @@ void main() {
       reminders.dispose();
     },
     variant: TargetPlatformVariant.only(TargetPlatform.macOS),
+  );
+
+  testWidgets(
+    'edits imported deadlines in the list and displays the changes on Home',
+    (tester) async {
+      final desktop = defaultTargetPlatform == TargetPlatform.macOS;
+      tester.view.physicalSize = Size(desktop ? 1100 : 400, 950);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final original = assignments.assignments.first;
+      final action = find.byTooltip(desktop ? '编辑 Deadline' : 'Deadline 操作');
+
+      Future<void> openEditor(Finder button) async {
+        await tester.ensureVisible(button);
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        if (!desktop) {
+          await tester.tap(find.text('编辑'));
+          await tester.pumpAndSettle();
+        }
+        expect(find.byType(DeadlineEditorPage), findsOneWidget);
+      }
+
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      await openEditor(action.first);
+      expect(find.text('迟交截止时间'), findsOneWidget);
+      final title = find.byWidgetPredicate(
+        (widget) => widget is EditableText && widget.controller.text == original.title,
+      );
+      await tester.enterText(title, 'Edited deadline');
+      final localDue = original.due.toLocal();
+      final editedDue = DateTime(
+        localDue.year,
+        localDue.month,
+        localDue.day,
+        localDue.hour,
+        (localDue.minute + 13) % 60,
+      );
+      await tester.tap(find.text('截止时间'));
+      await tester.pumpAndSettle();
+      tester
+          .widget<CupertinoDatePicker>(find.byType(CupertinoDatePicker))
+          .onDateTimeChanged(editedDue);
+      if (defaultTargetPlatform == TargetPlatform.iOS) {
+        tester.widget<IosSheetHeader>(find.byType(IosSheetHeader)).onConfirm!();
+      } else {
+        await tester.tap(find.text('确定'));
+      }
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('保存'));
+      await tester.tap(find.text('保存'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edited deadline'), findsOneWidget);
+      expect(assignments.findImportedDeadline(original)?.due, editedDue);
+
+      await tester.pumpWidget(buildPage(home: const HomePage()));
+      await tester.pumpAndSettle();
+      expect(find.text('Edited deadline'), findsOneWidget);
+      expect(find.byType(DeadlineEditButton), findsNothing);
+
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
+      final editedRow = find.ancestor(
+        of: find.text('Edited deadline'),
+        matching: find.byType(SwipeableCard),
+      );
+      final editAction = find.descendant(of: editedRow, matching: action);
+      if (!desktop) {
+        final progressBar = find.descendant(of: editedRow, matching: find.byType(TpProgressBar));
+        expect(tester.getTopRight(editAction).dx, greaterThan(tester.getTopRight(progressBar).dx));
+      }
+      await openEditor(editAction);
+      await tester.ensureVisible(find.text('恢复来源信息'));
+      await tester.tap(find.text('恢复来源信息'));
+      await tester.pumpAndSettle();
+      expect(assignments.findImportedDeadline(original)?.title, original.title);
+      expect(assignments.findImportedDeadline(original)?.due, original.due);
+    },
+    variant: const TargetPlatformVariant(
+      {TargetPlatform.iOS, TargetPlatform.android, TargetPlatform.macOS},
+    ),
   );
 
   testWidgets(
