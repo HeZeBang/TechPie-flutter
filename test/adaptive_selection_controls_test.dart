@@ -8,6 +8,7 @@ import 'package:techpie/widgets/adaptive_checkbox.dart';
 import 'package:techpie/widgets/adaptive_segmented_control.dart';
 import 'package:techpie/widgets/adaptive_slider.dart';
 import 'package:techpie/widgets/adaptive_switch.dart';
+import 'package:techpie/widgets/design_system/design_system.dart';
 
 void main() {
   tearDown(() {
@@ -39,31 +40,35 @@ void main() {
     debugDefaultTargetPlatformOverride = null;
   });
 
-  testWidgets('iOS segmented control is a native UISegmentedControl and reports selection', (
+  testWidgets('iOS segmented control renders TpSegmentedControl and reports selection', (
     WidgetTester tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     int? selectedValue;
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: AdaptiveSegmentedControl(
-            value: 0,
-            segments: const ['密码登录', '短信登录'],
-            onChanged: (value) => selectedValue = value,
+    try {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AdaptiveSegmentedControl(
+              value: 0,
+              segments: const ['密码登录', '短信登录'],
+              onChanged: (value) => selectedValue = value,
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    final control =
-        tester.widget<CNSegmentedControl>(find.byType(CNSegmentedControl));
-    expect(control.labels, ['密码登录', '短信登录']);
-    expect(control.selectedIndex, 0);
-    control.onValueChanged(1);
-    expect(selectedValue, 1);
-    debugDefaultTargetPlatformOverride = null;
+      expect(find.byType(TpSegmentedControl), findsOneWidget);
+      expect(find.byType(CNSegmentedControl), findsNothing);
+      await tester.tap(find.text('短信登录'));
+      // Drain AppHaptics.play's 300ms platform channel timeout timer.
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      expect(selectedValue, 1);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('iOS direct UIKit flag renders direct native UiKitViews for pre-iOS 26', (
@@ -105,10 +110,10 @@ void main() {
         views.map((v) => v.viewType),
         containsAll([
           'CupertinoNativeSwitch',
-          'CupertinoNativeSegmentedControl',
           'CupertinoNativeSlider',
         ]),
       );
+      expect(find.byType(TpSegmentedControl), findsOneWidget);
       expect(find.byIcon(CupertinoIcons.checkmark_alt), findsOneWidget);
       expect(find.byType(Switch), findsNothing);
       expect(find.byType(Slider), findsNothing);
@@ -119,7 +124,7 @@ void main() {
     }
   });
 
-  testWidgets('macOS selection controls use native AppKitView types', (
+  testWidgets('macOS selection controls use native AppKitView types and TpSegmentedControl', (
     WidgetTester tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
@@ -155,11 +160,11 @@ void main() {
         views.map((v) => v.viewType),
         containsAll([
           'TechPieMacSwitch',
-          'TechPieMacSegmentedControl',
           'TechPieMacSlider',
           'TechPieMacCheckbox',
         ]),
       );
+      expect(find.byType(TpSegmentedControl), findsOneWidget);
       expect(find.byType(Switch), findsNothing);
       expect(find.byType(SegmentedButton<int>), findsNothing);
       expect(find.byType(Slider), findsNothing);
@@ -169,7 +174,7 @@ void main() {
     }
   });
 
-  testWidgets('Android keeps Material Switch, SegmentedButton, Slider, and Checkbox', (
+  testWidgets('Android keeps Material Switch, Slider, Checkbox and unified TpSegmentedControl', (
     WidgetTester tester,
   ) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -194,7 +199,8 @@ void main() {
       );
 
       expect(find.byType(Switch), findsOneWidget);
-      expect(find.byType(SegmentedButton<int>), findsOneWidget);
+      expect(find.byType(TpSegmentedControl), findsOneWidget);
+      expect(find.byType(SegmentedButton<int>), findsNothing);
       expect(find.byType(Slider), findsOneWidget);
       expect(find.byType(Checkbox), findsOneWidget);
       expect(find.byType(AppKitView), findsNothing);

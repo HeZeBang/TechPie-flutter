@@ -12,6 +12,7 @@ import '../utils/platform.dart';
 import '../widgets/adaptive_checkbox.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_segmented_control.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
@@ -303,43 +304,30 @@ class _GradesViewState extends State<_GradesView> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Wrap(
-                          spacing: TpTokens.space2,
-                          runSpacing: TpTokens.space2,
-                          children: [
-                            for (final s in GradeScope.values)
-                              ChoiceChip(
-                                label: Text(s.label),
-                                selected: !english && scope == s,
-                                onSelected: (_) {
-                                  setState(() {
-                                    scope = s;
-                                    english = false;
-                                    term = null;
-                                    simulating = false;
-                                    _hypothetical.clear();
-                                    _omittedCourseIndices.clear();
-                                    _omittedTrialIds.clear();
-                                  });
-                                  unawaited(refresh(clearTrial: true));
-                                },
-                              ),
-                            ChoiceChip(
-                              label: const Text('英语成绩'),
-                              selected: english,
-                              onSelected: (_) {
-                                setState(() {
-                                  english = true;
-                                  term = null;
-                                  simulating = false;
-                                  _hypothetical.clear();
-                                  _omittedCourseIndices.clear();
-                                  _omittedTrialIds.clear();
-                                });
-                                unawaited(refresh(clearTrial: true));
-                              },
-                            ),
+                        AdaptiveSegmentedControl(
+                          value: english
+                              ? GradeScope.values.length
+                              : GradeScope.values.indexOf(scope),
+                          segments: [
+                            for (final s in GradeScope.values) s.label,
+                            '英语成绩',
                           ],
+                          onChanged: (idx) {
+                            setState(() {
+                              if (idx == GradeScope.values.length) {
+                                english = true;
+                              } else {
+                                scope = GradeScope.values[idx];
+                                english = false;
+                              }
+                              term = null;
+                              simulating = false;
+                              _hypothetical.clear();
+                              _omittedCourseIndices.clear();
+                              _omittedTrialIds.clear();
+                            });
+                            unawaited(refresh(clearTrial: true));
+                          },
                         ),
                         if (!english && _showSearch) ...[
                           const SizedBox(height: TpTokens.space3),

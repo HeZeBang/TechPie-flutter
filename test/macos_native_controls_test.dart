@@ -10,9 +10,10 @@ import 'package:techpie/widgets/adaptive_date_picker.dart';
 import 'package:techpie/widgets/adaptive_option_sheet.dart';
 import 'package:techpie/widgets/adaptive_popup_menu_button.dart';
 import 'package:techpie/widgets/adaptive_progress_indicator.dart';
-import 'package:techpie/widgets/adaptive_segmented_control.dart';
 import 'package:techpie/widgets/adaptive_slider.dart';
 import 'package:techpie/widgets/adaptive_switch.dart';
+import 'package:techpie/widgets/design_system/design_system.dart';
+import 'package:techpie/widgets/macos/macos_native_controls.dart';
 import 'package:techpie/widgets/schedule_picker_sheet.dart';
 
 void main() {
@@ -89,11 +90,11 @@ void main() {
                     semanticLabel: '自动同步',
                     onChanged: (v) => setState(() => switched = v),
                   ),
-                  AdaptiveSegmentedControl(
-                    value: segment,
-                    segments: const ['完成进度', '完整方案'],
+                  MacosNativeSegmentedControl(
+                    selectedIndex: segment,
+                    labels: const ['完成进度', '完整方案'],
                     enabled: enabled,
-                    onChanged: (v) => setState(() => segment = v),
+                    onValueChanged: (v) => setState(() => segment = v),
                   ),
                   AdaptiveSlider(
                     value: slider,
@@ -360,7 +361,7 @@ void main() {
     'showAdaptiveDateRangePicker uses macOS desktop CalendarDatePicker dialog',
     variant: TargetPlatformVariant.only(TargetPlatform.macOS),
     (tester) async {
-      final mocks = installMacOsPlatformViewMocks(tester);
+      installMacOsPlatformViewMocks(tester);
       DateTimeRange? picked;
       final initialRange = DateTimeRange(
         start: DateTime(2026, 3, 10),
@@ -392,17 +393,8 @@ void main() {
 
       expect(find.byType(Dialog), findsOneWidget);
       expect(find.byType(CalendarDatePicker), findsOneWidget);
-      expect(
-        tester.widget<AppKitView>(find.byType(AppKitView)).viewType,
-        'TechPieMacSegmentedControl',
-      );
-      await emitFromNative(
-        tester,
-        'TechPieMacSegmentedControl',
-        mocks['TechPieMacSegmentedControl']!.id,
-        'valueChanged',
-        {'index': 1},
-      );
+      expect(find.byType(TpSegmentedControl), findsOneWidget);
+      await tester.tap(find.text('结束日期'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('确定'));

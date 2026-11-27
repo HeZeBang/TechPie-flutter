@@ -113,33 +113,25 @@ class _HubState extends State<_Hub> with SingleTickerProviderStateMixin {
               onPressed: _refreshActiveTab,
             ),
           ],
-          bottom: TabBar(
-            controller: _tabs,
-            tabs: const [Tab(text: '我的课程'), Tab(text: '公告')],
-          ),
         ),
       ),
       body: Column(
         children: [
-          AdaptiveNavigationScaffold.adaptiveChrome(
-            ios: () => Padding(
-              padding: const EdgeInsets.fromLTRB(
-                TpTokens.pageHorizontalPadding,
-                TpTokens.space2,
-                TpTokens.pageHorizontalPadding,
-                0,
-              ),
-              child: TpPageBody(
-                maxWidth: 880,
-                child: AdaptiveSegmentedControl(
-                  value: _tabIndex,
-                  segments: const ['我的课程', '公告'],
-                  shrinkWrap: true,
-                  onChanged: _tabs.animateTo,
-                ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              TpTokens.pageHorizontalPadding,
+              TpTokens.space3,
+              TpTokens.pageHorizontalPadding,
+              TpTokens.space2,
+            ),
+            child: TpPageBody(
+              maxWidth: 880,
+              child: AdaptiveSegmentedControl(
+                value: _tabIndex,
+                segments: const ['我的课程', '公告'],
+                onChanged: _tabs.animateTo,
               ),
             ),
-            material: () => const SizedBox.shrink(),
           ),
           Expanded(
             child: TabBarView(
@@ -150,7 +142,7 @@ class _HubState extends State<_Hub> with SingleTickerProviderStateMixin {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(
                         TpTokens.pageHorizontalPadding,
-                        TpTokens.space3,
+                        TpTokens.space1,
                         TpTokens.pageHorizontalPadding,
                         TpTokens.space2,
                       ),
