@@ -7,11 +7,15 @@ import '../models/quick_shortcuts.dart';
 import '../services/service_provider.dart';
 import '../services/storage_service.dart';
 import '../theme/theme.dart';
+import '../utils/haptics.dart';
+import '../widgets/adaptive_checkbox.dart';
 import '../widgets/adaptive_feedback.dart';
+import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
+import '../widgets/ios/ios_native_navigation_bar.dart';
 import 'campus_feature_navigation.dart';
 
 class CampusServicesPage extends StatefulWidget {
@@ -60,15 +64,44 @@ class _CampusServicesPageState extends State<CampusServicesPage> {
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final query = _query.trim().toLowerCase();
-    final results = featureEntries.where(
-      (f) => [f.description, f.subtitle, ...f.keywords]
-          .any((text) => text.toLowerCase().contains(query)),
-    );
-    return Scaffold(
-      backgroundColor: colors.canvas,
-      appBar: widget.isRootDestination
-          ? null
-          : BlurredAppBar(
+    final results = featureEntries
+        .where(
+          (f) => [f.description, f.subtitle, ...f.keywords]
+              .any((text) => text.toLowerCase().contains(query)),
+        )
+        .toList();
+
+    final nonRootBar = widget.isRootDestination
+        ? null
+        : AdaptiveNavigationScaffold.adaptiveBar(
+            ios: () => IosNativeNavigationBar(
+              title: '校园服务中心',
+              leadingItems: const [
+                IosNativeNavigationBarItem(
+                  id: 'back',
+                  title: '首页',
+                  sfSymbol: 'chevron.left',
+                  accessibilityLabel: '返回首页',
+                  placementGroup: 'leading-main',
+                ),
+              ],
+              trailingItems: const [
+                IosNativeNavigationBarItem(
+                  id: 'shortcuts',
+                  sfSymbol: 'slider.horizontal.3',
+                  accessibilityLabel: '编辑首页快捷',
+                  placementGroup: 'trailing-main',
+                ),
+              ],
+              onItemPressed: (id) {
+                if (id == 'back') {
+                  unawaited(maybePopAdaptivePage<void>(context));
+                } else if (id == 'shortcuts') {
+                  _openShortcutEditor(context);
+                }
+              },
+            ),
+            material: () => BlurredAppBar(
               title: const Text('校园服务中心'),
               actions: [
                 IconButton(
@@ -78,6 +111,17 @@ class _CampusServicesPageState extends State<CampusServicesPage> {
                 ),
               ],
             ),
+          );
+
+    final topInset = widget.isRootDestination
+        ? 0.0
+        : AdaptiveNavigationScaffold.contentTopInsetOf(context);
+
+    return Scaffold(
+      backgroundColor: colors.canvas,
+      extendBodyBehindAppBar: !widget.isRootDestination &&
+          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      appBar: nonRootBar,
       body: SafeArea(
         top: widget.isRootDestination,
         bottom: false,
@@ -93,13 +137,18 @@ class _CampusServicesPageState extends State<CampusServicesPage> {
                   : constraints.maxWidth < 960
                       ? 2
                       : 3;
-              final width =
-                  (constraints.maxWidth - 2 * gutter - (columns - 1) * TpTokens.space3) / columns;
-              final topPadding = widget.isRootDestination &&
-                      constraints.maxWidth >= 600
-                  ? TpTokens.space5
-                  : TpTokens.space4;
+              final width = (constraints.maxWidth -
+                      2 * gutter -
+                      (columns - 1) * TpTokens.space3) /
+                  columns;
+              final topPadding = (widget.isRootDestination &&
+                          constraints.maxWidth >= 600
+                      ? TpTokens.space5
+                      : TpTokens.space4) +
+                  topInset;
               return ListView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: EdgeInsets.fromLTRB(
                   gutter,
                   topPadding,
@@ -169,9 +218,21 @@ class _CampusServicesPageState extends State<CampusServicesPage> {
                   TextField(
                     controller: _search,
                     onChanged: (text) => setState(() => _query = text),
+                    textInputAction: TextInputAction.search,
                     decoration: InputDecoration(
                       labelText: '搜索服务',
-                      prefixIcon: const Icon(TpIcons.search),
+                      hintText: '输入服务名、拼音或关键词',
+                      filled: true,
+                      fillColor: colors.surface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(TpTokens.radiusM),
+                        borderSide: BorderSide(color: colors.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(TpTokens.radiusM),
+                        borderSide: BorderSide(color: colors.border),
+                      ),
+                      prefixIcon: Icon(TpIcons.search, color: colors.textMuted),
                       suffixIcon: _query.isEmpty
                           ? null
                           : IconButton(
@@ -183,38 +244,86 @@ class _CampusServicesPageState extends State<CampusServicesPage> {
                   ),
                   if (results.isEmpty)
                     Padding(
-                      padding: const EdgeInsets.all(TpTokens.space5),
-                      child: Column(
-                        children: [
-                          const Text('没有找到相关服务'),
-                          TextButton(onPressed: _clear, child: const Text('清除搜索')),
-                        ],
+                      padding: const EdgeInsets.only(top: TpTokens.space5),
+                      child: TpStateCard.empty(
+                        icon: TpIcons.search,
+                        title: '没有找到相关服务',
+                        message: '尝试更换关键词或拼音，或清除搜索查看全部校园服务。',
+                        primaryActionLabel: '清除搜索',
+                        primaryActionIcon: TpIcons.close,
+                        primaryActionSfSymbol: 'xmark.circle',
+                        onPrimaryAction: _clear,
                       ),
                     ),
                   for (final category in CampusServiceCategory.values)
                     if (results.any((f) => f.category == category)) ...[
                       Padding(
-                        padding:
-                            const EdgeInsets.only(top: TpTokens.space5, bottom: TpTokens.space2),
-                        child: Semantics(
-                          header: true,
-                          child: Text(category.label, style: TpTypography.cardTitle(colors)),
+                        padding: const EdgeInsets.only(
+                          top: TpTokens.space5,
+                          bottom: TpTokens.space2,
+                        ),
+                        child: Row(
+                          children: [
+                            Semantics(
+                              header: true,
+                              child: Text(
+                                category.label,
+                                style: TpTypography.cardTitle(colors),
+                              ),
+                            ),
+                            const SizedBox(width: TpTokens.space2),
+                            TpBadge(
+                              label:
+                                  '${results.where((f) => f.category == category).length}',
+                              tone: TpBadgeTone.muted,
+                            ),
+                          ],
                         ),
                       ),
                       Wrap(
                         spacing: TpTokens.space3,
                         runSpacing: TpTokens.space3,
                         children: [
-                          for (final f in results.where((f) => f.category == category))
+                          for (final f
+                              in results.where((f) => f.category == category))
                             SizedBox(
                               width: width,
                               child: TpCard(
                                 onTap: () => openCampusFeature(context, f),
                                 child: ListTile(
-                                  leading: Icon(f.icon.icon, color: colors.brandInk),
-                                  title: Text(f.description),
-                                  subtitle: Text(f.subtitle),
-                                  trailing: const Icon(TpIcons.chevronRight, size: TpTokens.iconS),
+                                  leading: Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: colors.brandSoft,
+                                      borderRadius: BorderRadius.circular(
+                                        TpTokens.radiusS,
+                                      ),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Icon(
+                                      f.icon.icon ?? TpIcons.activities,
+                                      size: TpTokens.iconM,
+                                      color: colors.brandInk,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    f.description,
+                                    style: TpTypography.itemTitle(colors),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    f.subtitle,
+                                    style: TpTypography.itemMeta(colors),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  trailing: Icon(
+                                    TpIcons.chevronRight,
+                                    size: TpTokens.iconS,
+                                    color: colors.textMuted,
+                                  ),
                                 ),
                               ),
                             ),
@@ -273,29 +382,90 @@ class _HomeShortcutEditorPageState extends State<HomeShortcutEditorPage> {
     if (mounted) Navigator.of(context).pop();
   }
 
-  void _move(int index, int by) => setState(() {
-        final id = _selected.removeAt(index);
-        _selected.insert(index + by, id);
-      });
+  void _move(int index, int by) {
+    unawaited(AppHaptics.play(AppHaptics.selection));
+    setState(() {
+      final id = _selected.removeAt(index);
+      _selected.insert(index + by, id);
+    });
+  }
+
+  void _resetDefaults() {
+    unawaited(AppHaptics.play(AppHaptics.selection));
+    setState(() {
+      _selected
+        ..clear()
+        ..addAll(homeQuickFeatures(null).map((f) => f.id));
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    return Scaffold(
-      backgroundColor: colors.canvas,
-      appBar: BlurredAppBar(
-        leading: IconButton(
-          tooltip: '取消',
-          icon: const Icon(TpIcons.close),
-          onPressed: () => Navigator.of(context).pop(),
+    return PopScope(
+      canPop: !_saving,
+      child: Scaffold(
+        backgroundColor: colors.canvas,
+        appBar: AdaptiveNavigationScaffold.adaptiveBar(
+          ios: () => IosNativeNavigationBar(
+            title: '编辑首页快捷',
+            leadingItems: [
+              IosNativeNavigationBarItem(
+                id: 'cancel',
+                title: '取消',
+                sfSymbol: 'xmark',
+                accessibilityLabel: '取消',
+                enabled: !_saving,
+                placementGroup: 'leading-main',
+              ),
+            ],
+            trailingItems: [
+              IosNativeNavigationBarItem(
+                id: 'reset',
+                title: '恢复默认',
+                enabled: !_saving,
+                placementGroup: 'trailing-main',
+              ),
+              IosNativeNavigationBarItem(
+                id: 'save',
+                title: '保存',
+                role: IosNativeNavigationBarItemRole.done,
+                enabled: !_saving,
+                placementGroup: 'trailing-main',
+              ),
+            ],
+            onItemPressed: (id) {
+              if (_saving) return;
+              switch (id) {
+                case 'cancel':
+                  Navigator.of(context).pop();
+                case 'reset':
+                  _resetDefaults();
+                case 'save':
+                  unawaited(_save());
+              }
+            },
+          ),
+          material: () => BlurredAppBar(
+            leading: IconButton(
+              tooltip: '取消',
+              icon: const Icon(TpIcons.close),
+              onPressed: _saving ? null : () => Navigator.of(context).pop(),
+            ),
+            title: const Text('编辑首页快捷'),
+            actions: [
+              TextButton(
+                onPressed: _saving ? null : _resetDefaults,
+                child: const Text('恢复默认'),
+              ),
+              TextButton(
+                onPressed: _saving ? null : _save,
+                child: const Text('保存'),
+              ),
+            ],
+          ),
         ),
-        title: const Text('编辑首页快捷'),
-        actions: [TextButton(onPressed: _saving ? null : _save, child: const Text('保存'))],
-      ),
-      body: SafeArea(
-        top: false,
-        bottom: false,
-        child: TpPageBody(
+        body: TpPageBody(
           child: ListView(
             padding: EdgeInsets.fromLTRB(
               TpTokens.space4,
@@ -305,58 +475,94 @@ class _HomeShortcutEditorPageState extends State<HomeShortcutEditorPage> {
             ),
             children: [
               TpCard(
+                leadingIcon: TpIcons.sliders,
                 title: '已选 ${_selected.length}/$maxPinnedQuickFeatures',
                 child: Column(
                   children: [
                     for (var i = 0; i < _selected.length; i++)
                       ListTile(
                         key: ValueKey('pin-${_selected[i]}'),
+                        leading: Icon(
+                          _available[_selected[i]]!.icon.icon ??
+                              TpIcons.activities,
+                          color: colors.brandInk,
+                        ),
                         title: Text(_available[_selected[i]]!.description),
+                        subtitle: Text(
+                          _available[_selected[i]]!.subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             IconButton(
                               tooltip: '上移',
-                              onPressed: i == 0 || _saving ? null : () => _move(i, -1),
+                              onPressed: i == 0 || _saving
+                                  ? null
+                                  : () => _move(i, -1),
                               icon: const Icon(TpIcons.arrowUp),
                             ),
                             IconButton(
                               tooltip: '下移',
                               onPressed:
-                                  i == _selected.length - 1 || _saving ? null : () => _move(i, 1),
+                                  i == _selected.length - 1 || _saving
+                                      ? null
+                                      : () => _move(i, 1),
                               icon: const Icon(TpIcons.arrowDown),
                             ),
                           ],
                         ),
                       ),
                     if (_selected.length < maxPinnedQuickFeatures)
-                      const Padding(
-                        padding: EdgeInsets.all(TpTokens.space3),
-                        child: Text('首页的空位会按默认顺序补齐。'),
+                      Padding(
+                        padding: const EdgeInsets.all(TpTokens.space3),
+                        child: Text(
+                          '首页的空位会按默认顺序补齐。',
+                          style: TpTypography.itemMeta(colors),
+                        ),
                       ),
                   ],
                 ),
               ),
               const SizedBox(height: TpTokens.space4),
               TpCard(
+                leadingIcon: TpIcons.activities,
                 title: '选择服务',
                 child: Column(
                   children: [
-                    for (final f in _available.values)
-                      CheckboxListTile(
-                        title: Text(f.description),
-                        value: _selected.contains(f.id),
-                        onChanged: _saving ||
-                                (!_selected.contains(f.id) &&
-                                    _selected.length == maxPinnedQuickFeatures)
-                            ? null
-                            : (checked) => setState(() {
-                                  if (checked == true) {
-                                    _selected.add(f.id);
-                                  } else {
-                                    _selected.remove(f.id);
-                                  }
-                                }),
+                    for (var i = 0; i < _available.length; i++)
+                      Builder(
+                        builder: (context) {
+                          final f = _available.values.elementAt(i);
+                          final disabled = _saving ||
+                              (!_selected.contains(f.id) &&
+                                  _selected.length == maxPinnedQuickFeatures);
+                          return AdaptiveCheckboxRow(
+                            title: f.description,
+                            subtitle: f.subtitle,
+                            trailing: Icon(
+                              f.icon.icon ?? TpIcons.activities,
+                              color: colors.brandInk,
+                            ),
+                            showDivider: i < _available.length - 1,
+                            value: _selected.contains(f.id),
+                            onChanged: disabled
+                                ? null
+                                : (checked) {
+                                    unawaited(
+                                      AppHaptics.play(AppHaptics.selection),
+                                    );
+                                    setState(() {
+                                      if (checked == true) {
+                                        _selected.add(f.id);
+                                      } else {
+                                        _selected.remove(f.id);
+                                      }
+                                    });
+                                  },
+                          );
+                        },
                       ),
                   ],
                 ),

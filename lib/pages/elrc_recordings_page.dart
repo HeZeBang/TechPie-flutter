@@ -14,8 +14,10 @@ import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
+import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/page_refresh.dart';
 import 'campus_session_handle.dart';
 import 'elrc_player_page.dart';
 
@@ -541,20 +543,21 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> with WidgetsBin
     });
   }
 
+  Future<void> _refreshCourses() => _sessionReloadRequired
+      ? _openLogin()
+      : _courses == null
+          ? _reloadReview()
+          : _loadCourses();
+
+  Future<void> _refreshLessons(ElrcCourse course) =>
+      _sessionReloadRequired ? _openLogin() : _loadLessons(course);
+
   void _retryCourses() {
-    unawaited(
-      _sessionReloadRequired
-          ? _openLogin()
-          : _courses == null
-              ? _reloadReview()
-              : _loadCourses(),
-    );
+    unawaited(_refreshCourses());
   }
 
   void _retryLessons(ElrcCourse course) {
-    unawaited(
-      _sessionReloadRequired ? _openLogin() : _loadLessons(course),
-    );
+    unawaited(_refreshLessons(course));
   }
 
   String _courseSubtitle(ElrcCourse course) {
@@ -735,14 +738,16 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> with WidgetsBin
       }
 
       final meta = _courseSubtitle(selectedCourse);
-      return ListView(
-        padding: EdgeInsets.fromLTRB(
-          TpTokens.pageHorizontalPadding,
-          TpTokens.space3,
-          TpTokens.pageHorizontalPadding,
-          AppShellMetrics.bottomContentPaddingOf(context),
-        ),
-        children: [
+      return PageRefreshIndicator(
+        onRefresh: () => _refreshLessons(selectedCourse),
+        child: ListView(
+          padding: EdgeInsets.fromLTRB(
+            TpTokens.pageHorizontalPadding,
+            TpTokens.space3,
+            TpTokens.pageHorizontalPadding,
+            AppShellMetrics.bottomContentPaddingOf(context),
+          ),
+          children: [
           TpPageBody(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -822,6 +827,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> with WidgetsBin
             ),
           ),
         ],
+      ),
       );
     }
 
@@ -847,15 +853,31 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> with WidgetsBin
         colors,
         icon: TpIcons.recordings,
         title: '当前账号暂无课程录播',
-        subtitle: '如果切换过校园账号或登录已失效，请尝试重新登录。',
-        action: AdaptiveButton(
-          onPressed: _openLogin,
-          icon: TpIcons.login,
-          sfSymbol: 'person.crop.circle',
-          label: '重新登录',
-          role: AdaptiveButtonRole.prominent,
-          height: 44,
-          width: 200,
+        subtitle: '如果切换过校园账号或登录已失效，请刷新列表或重新登录。',
+        action: Wrap(
+          spacing: TpTokens.space3,
+          runSpacing: TpTokens.space2,
+          alignment: WrapAlignment.center,
+          children: [
+            AdaptiveButton(
+              onPressed: _busy ? null : _retryCourses,
+              icon: TpIcons.refresh,
+              sfSymbol: 'arrow.clockwise',
+              label: '刷新列表',
+              role: AdaptiveButtonRole.standard,
+              height: 44,
+              width: 140,
+            ),
+            AdaptiveButton(
+              onPressed: _openLogin,
+              icon: TpIcons.login,
+              sfSymbol: 'person.crop.circle',
+              label: '重新登录',
+              role: AdaptiveButtonRole.prominent,
+              height: 44,
+              width: 140,
+            ),
+          ],
         ),
       );
     }
@@ -869,15 +891,17 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> with WidgetsBin
                 (course.courseNo?.toLowerCase().contains(q) ?? false);
           }).toList();
 
-    return ListView(
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      padding: EdgeInsets.fromLTRB(
-        TpTokens.pageHorizontalPadding,
-        TpTokens.space3,
-        TpTokens.pageHorizontalPadding,
-        AppShellMetrics.bottomContentPaddingOf(context),
-      ),
-      children: [
+    return PageRefreshIndicator(
+      onRefresh: _refreshCourses,
+      child: ListView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        padding: EdgeInsets.fromLTRB(
+          TpTokens.pageHorizontalPadding,
+          TpTokens.space3,
+          TpTokens.pageHorizontalPadding,
+          AppShellMetrics.bottomContentPaddingOf(context),
+        ),
+        children: [
         TpPageBody(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -962,6 +986,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> with WidgetsBin
           ),
         ),
       ],
+    ),
     );
   }
 
@@ -1054,7 +1079,7 @@ class _ElrcRecordingsPageState extends State<ElrcRecordingsPage> with WidgetsBin
               }
             },
           ),
-          material: () => AppBar(
+          material: () => BlurredAppBar(
             automaticallyImplyLeading: _selectedCourse == null,
             leading: _selectedCourse == null
                 ? null

@@ -101,7 +101,7 @@ final class DeadlineSnapshotTests: XCTestCase {
     calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)!
     // 23:30 local: an hour later is already tomorrow.
     let now = ISO8601DateFormatter().date(from: "2026-10-12T15:30:00Z")!
-    let items = [0.25, 1, 20, 72, 24 * 6.5, 24 * 7].enumerated().map { index, hours in
+    let items = [0.25, 1, 20, 72, 24 * 6.5, 24 * 7.0].enumerated().map { index, hours in
       DeadlineItem(id: "\(index)", kind: .assignment, title: "A", subtitle: "",
                    dueAt: now.timeIntervalSince1970 + hours * 3600)
     }
@@ -147,5 +147,12 @@ final class DeadlineSnapshotTests: XCTestCase {
     XCTAssertEqual(saved, snapshot)
     XCTAssertTrue(try store.clear())
     XCTAssertFalse(try store.clear())
+  }
+
+  func testUrgencyTiersRespectThresholds() {
+    XCTAssertEqual(item("past", seconds: 0).urgency(at: now), .overdue)
+    XCTAssertEqual(item("u", seconds: 3600).urgency(at: now), .urgent)
+    XCTAssertEqual(item("s", seconds: 36 * 3600).urgency(at: now), .soon)
+    XCTAssertEqual(item("l", seconds: 96 * 3600).urgency(at: now), .upcoming)
   }
 }

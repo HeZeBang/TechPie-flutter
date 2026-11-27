@@ -4,7 +4,9 @@ import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/theme.dart';
 import '../utils/platform.dart';
+import 'adaptive_checkbox.dart';
 import 'adaptive_select.dart';
 import 'schedule_picker_sheet.dart';
 
@@ -130,6 +132,7 @@ class AdaptiveMultiSelect extends StatelessWidget {
 
   Future<void> _showOptions(BuildContext context) async {
     if (isIos()) return _showIosOptions(context);
+    if (usesMacOsNativeControls()) return _showMacOsOptions(context);
     var pending = {...values};
 
     final confirmed = await CNBottomSheet.show<Set<String>>(
@@ -177,10 +180,10 @@ class AdaptiveMultiSelect extends StatelessWidget {
                         itemBuilder: (context, index) {
                           final option = options[index];
                           final selected = pending.contains(option.value);
-                          return CheckboxListTile(
+                          return AdaptiveCheckboxRow(
+                            title: option.label,
                             value: selected,
-                            title: Text(option.label),
-                            controlAffinity: ListTileControlAffinity.leading,
+                            showDivider: index < options.length - 1,
                             onChanged: (checked) => setModalState(() {
                               if (checked ?? false) {
                                 pending.add(option.value);
@@ -201,6 +204,94 @@ class AdaptiveMultiSelect extends StatelessWidget {
       },
     );
 
+    if (confirmed != null) onChanged(confirmed);
+  }
+
+  Future<void> _showMacOsOptions(BuildContext context) async {
+    final pending = {...values};
+    final confirmed = await showDialog<Set<String>>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final colors = context.tpColors;
+          return Dialog(
+            backgroundColor: colors.surface,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(TpTokens.radiusL),
+              side: BorderSide(color: colors.divider),
+            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420, maxHeight: 480),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(
+                      TpTokens.space5,
+                      TpTokens.space4,
+                      TpTokens.space5,
+                      TpTokens.space3,
+                    ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        title ?? placeholder,
+                        style: TpTypography.cardTitle(colors),
+                      ),
+                    ),
+                  ),
+                  Divider(height: 1, color: colors.divider),
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      itemBuilder: (context, index) {
+                        final option = options[index];
+                        final selected = pending.contains(option.value);
+                        return AdaptiveCheckboxRow(
+                          title: option.label,
+                          value: selected,
+                          showDivider: index < options.length - 1,
+                          onChanged: (checked) => setDialogState(() {
+                            if (checked ?? false) {
+                              pending.add(option.value);
+                            } else {
+                              pending.remove(option.value);
+                            }
+                          }),
+                        );
+                      },
+                    ),
+                  ),
+                  Divider(height: 1, color: colors.divider),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: TpTokens.space4,
+                      vertical: TpTokens.space3,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('取消'),
+                        ),
+                        const SizedBox(width: TpTokens.space2),
+                        FilledButton(
+                          onPressed: () =>
+                              Navigator.pop(dialogContext, pending),
+                          child: const Text('确定'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
     if (confirmed != null) onChanged(confirmed);
   }
 

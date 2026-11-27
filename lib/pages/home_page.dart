@@ -29,12 +29,14 @@ import '../utils/user_display_name.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_feedback.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_slider.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_shell/app_shell.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/app_shell/desktop/desktop_shell.dart';
 import '../widgets/design_system/design_system.dart';
 import '../widgets/home/home_bento_editor.dart';
+import '../widgets/home/home_campus_service_widgets.dart';
 import '../widgets/home/home_mobile_reorder_list.dart';
 import '../widgets/home/home_widget_chrome.dart';
 import '../widgets/home/home_widget_gallery_sheet.dart';
@@ -379,6 +381,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       appShellPendingTab.value = AppShell.campusServicesTabIndex;
       return;
     }
+    context
+        .getInheritedWidgetOfExactType<ServiceProvider>()
+        ?.telemetry
+        ?.featureOpened('campus_services');
     await pushAdaptivePage<void>(
       context,
       builder: (_) => CampusServicesPage(storage: storage),
@@ -679,6 +685,33 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final header = TpPageHeader(
       key: const ValueKey('home.greeting-header'),
       subtitle: dateSubtitle,
+      subtitleWidget: showHeaderAvatar
+          ? Row(
+              key: const ValueKey('home.brand-bar'),
+              children: [
+                const TpBrandMark(size: 15),
+                const SizedBox(width: 5),
+                Text(
+                  'TechPie',
+                  style: TpTypography.pageSubtitle(colors).copyWith(
+                    fontFamily: TpBrandWordmark.brandFontFamily,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.35,
+                    color: colors.textPrimary,
+                  ),
+                ),
+                Flexible(
+                  child: Text(
+                    ' · $dateSubtitle',
+                    style: TpTypography.pageSubtitle(colors),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            )
+          : null,
       title: _greetingTitle(now, auth, tpAuth, campusCard),
       trailing: _isEditing
           ? null
@@ -711,15 +744,28 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ? _desktopLayout.campusCardStyle
         : _mobileLayout.campusCardStyle;
 
+    final showMobileGlanceRow = !isBento &&
+        !_isEditing &&
+        auth.isLoggedIn &&
+        _todayCourses.isEmpty &&
+        _mobileLayout.order.contains(HomeWidgetId.deadlines);
+
     Widget buildWidgetCard(HomeWidgetId id) => switch (id) {
           HomeWidgetId.campusCard => _buildCampusCardStrip(
               campusCard,
               storage,
               expandedCard: effectiveCardStyle == HomeCampusCardStyle.full,
             ),
-          HomeWidgetId.todayCourses => _buildTodayClasses(colors, auth.isLoggedIn),
+          HomeWidgetId.todayCourses => showMobileGlanceRow
+              ? _buildMobileGlanceRow(colors)
+              : _buildTodayClasses(colors, auth.isLoggedIn),
           HomeWidgetId.deadlines => _buildPendingAssignments(colors),
           HomeWidgetId.quickActions => _buildQuickActions(),
+          _ => buildCampusServiceHomeWidget(
+              context,
+              id,
+              todayCourses: _todayCourses,
+            ),
         };
 
     final debugPanel = isDebug ? _buildDebugPanel(colors) : null;
@@ -979,7 +1025,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         columns: 3,
         onFeatureTap: (feature) async {
           if (feature != moreFeature) {
-            openCampusFeature(context, feature);
+            await openCampusFeature(context, feature);
             return;
           }
           await _openMoreCampusServices(storage);
@@ -997,6 +1043,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         key: const ValueKey('not-logged-in'),
         colors: colors,
         icon: TpIcons.login,
+        useBrandAccent: true,
         title: '登录以查看今日课程',
         subtitle: '连接你的教务系统账号',
         actionLabel: '登录',
@@ -1113,13 +1160,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildPendingAssignments(TpColors colors) {
-    final now = _now;
-    DateTime activeDueOf(Assignment a) =>
-        (a.effectiveLateDue != null && a.due.isBefore(now))
-            ? a.effectiveLateDue!
-            : a.due;
-    final pending = _assignments.visibleAssignments
+  static DateTime _activeDueOf(Assignment a, DateTime now) =>
+      (a.effectiveLateDue != null && a.due.isBefore(now))
+          ? a.effectiveLateDue!
+          : a.due;
+
+  List<Assignment> _activePendingAssignments(DateTime now) {
+    return _assignments.visibleAssignments
         .where(
           (a) =>
               !_assignments.isCompleted(a) &&
@@ -1127,7 +1174,114 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               (!a.canBeOverdue || !a.effectiveDue.isBefore(now)),
         )
         .toList()
-      ..sort((a, b) => activeDueOf(a).compareTo(activeDueOf(b)));
+      ..sort((a, b) => _activeDueOf(a, now).compareTo(_activeDueOf(b, now)));
+  }
+
+  Widget _buildMobileGlanceRow(TpColors colors) {
+    final now = _now;
+    final pending = _activePendingAssignments(now);
+    final urgentCount = pending.where((a) {
+      final isExamInProgress = a is ExamAssignment && a.isInProgressAt(now);
+      final inLateWindow = a.effectiveLateDue != null && a.due.isBefore(now);
+      final due = inLateWindow ? a.effectiveLateDue! : a.due;
+      return isExamInProgress ||
+          inLateWindow ||
+          due.difference(now).inHours < 24;
+    }).length;
+
+    final String statusText;
+    if (urgentCount > 0) {
+      statusText = '$urgentCount 项需关注';
+    } else if (pending.isEmpty) {
+      statusText = '全部完成';
+    } else {
+      final nearest = _dueLabel(_activeDueOf(pending.first, now), now)
+          .replaceFirst('剩余 ', '');
+      statusText = '最近 $nearest';
+    }
+
+    final metaStyle = TpTypography.cardMeta(colors);
+    final unitStyle = metaStyle.copyWith(color: colors.textSecondary);
+    final countStyle = TpTypography.numericDisplay(colors).copyWith(fontSize: 24);
+
+    final todayTile = TpCard(
+      onTap: () => appShellPendingTab.value = 1,
+      padding: const EdgeInsets.all(TpTokens.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('今日课程', style: metaStyle, maxLines: 1),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('0', style: countStyle),
+              const SizedBox(width: 3),
+              Text('节', style: unitStyle),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '休息日',
+            style: metaStyle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+
+    final deadlinesTile = TpCard(
+      key: const ValueKey('home.deadlines-glance'),
+      onTap: () => appShellPendingDeadlines.value = true,
+      padding: const EdgeInsets.all(TpTokens.space4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Deadlines', style: metaStyle, maxLines: 1),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text('${pending.length}', style: countStyle),
+              const SizedBox(width: 3),
+              Text('项', style: unitStyle),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            statusText,
+            style: metaStyle.copyWith(
+              color: urgentCount > 0 ? colors.dangerRed : colors.textMuted,
+              fontWeight: urgentCount > 0 ? FontWeight.w600 : FontWeight.w500,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+
+    return IntrinsicHeight(
+      key: const ValueKey('home.today-courses'),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(child: todayTile),
+          const SizedBox(width: TpTokens.sectionGap),
+          Expanded(child: deadlinesTile),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPendingAssignments(TpColors colors) {
+    final now = _now;
+    final pending = _activePendingAssignments(now);
 
     final showCount = pending.length.clamp(0, 4);
     final overflow = pending.length - showCount;
@@ -1224,6 +1378,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
+  static String _formatPlatformLabel(String raw) => switch (raw.toLowerCase()) {
+        'blackboard' => 'Blackboard',
+        'gradescope' => 'Gradescope',
+        'hydro' => 'Hydro',
+        'custom' => '自定义',
+        _ => raw,
+      };
+
   Widget _buildPendingItem(
     TpColors colors,
     Assignment a,
@@ -1233,9 +1395,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final isExamInProgress = a is ExamAssignment && a.isInProgressAt(now);
     final inLateWindow = a.effectiveLateDue != null && a.due.isBefore(now);
     final activeDue = inLateWindow ? a.effectiveLateDue! : a.due;
-    final dueColor = (isExamInProgress || inLateWindow)
-        ? colors.dangerRed
-        : _dueColor(activeDue, now, colors);
+    final visuals = _dueVisuals(
+      activeDue,
+      now,
+      colors,
+      forceUrgent: isExamInProgress || inLateWindow,
+    );
     final dueLabel = isExamInProgress
         ? '考试中'
         : (inLateWindow
@@ -1251,7 +1416,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           if (location.isNotEmpty) location,
         ].join(' · '),
       _ => [
-          if (a.platform.isNotEmpty) a.platform,
+          if (a.platform.isNotEmpty) _formatPlatformLabel(a.platform),
           if (a.course.isNotEmpty) a.course,
         ].join(' · '),
     };
@@ -1261,7 +1426,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       subtitle: detail,
       trailingLabel: dueLabel,
       progress: progress,
-      color: dueColor,
+      color: visuals.barColor,
+      trailingColor: visuals.trailingColor,
+      highlightTrailing: visuals.highlightTrailing,
       showDivider: showDivider,
       onTap: a is CustomDeadline ? null : () => unawaited(_openAssignmentUrl(a)),
     );
@@ -1292,11 +1459,33 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return '< 1 分钟';
   }
 
-  static Color _dueColor(DateTime due, DateTime now, TpColors colors) {
+  static ({Color barColor, Color trailingColor, bool highlightTrailing})
+      _dueVisuals(
+    DateTime due,
+    DateTime now,
+    TpColors colors, {
+    bool forceUrgent = false,
+  }) {
     final diff = due.difference(now);
-    if (diff.inHours < 24) return colors.dangerRed;
-    if (diff.inDays < 3) return colors.warningAmber;
-    return colors.infoBlue;
+    if (forceUrgent || diff.inHours < 24) {
+      return (
+        barColor: colors.dangerRed,
+        trailingColor: colors.dangerRed,
+        highlightTrailing: true,
+      );
+    }
+    if (diff.inDays < 3) {
+      return (
+        barColor: colors.warningAmber,
+        trailingColor: colors.warningAmber,
+        highlightTrailing: false,
+      );
+    }
+    return (
+      barColor: colors.textPrimary.withValues(alpha: colors.isDark ? 0.30 : 0.28),
+      trailingColor: colors.textMuted,
+      highlightTrailing: false,
+    );
   }
 
   Future<void> _openAssignmentUrl(Assignment a) async {
@@ -1321,11 +1510,28 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     required IconData icon,
     required String title,
     required String subtitle,
+    bool useBrandAccent = false,
+    Widget? leading,
     String? actionLabel,
     String? actionSfSymbol,
     VoidCallback? onTap,
     Widget? footer,
   }) {
+    final resolvedBadge = leading ??
+        Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: useBrandAccent ? colors.brandSoft : colors.surfaceSubtle,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            icon,
+            size: TpTokens.iconS + 1,
+            color: useBrandAccent ? colors.brandInk : colors.textMuted,
+          ),
+        );
+
     return Padding(
       key: key,
       padding: const EdgeInsets.fromLTRB(
@@ -1340,19 +1546,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         children: [
           Row(
             children: [
-              Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: colors.surfaceSubtle,
-                  borderRadius: BorderRadius.circular(TpTokens.radiusS),
-                ),
-                child: Icon(
-                  icon,
-                  size: TpTokens.iconM - 2,
-                  color: colors.textMuted,
-                ),
-              ),
+              resolvedBadge,
               const SizedBox(width: TpTokens.space3),
               Expanded(
                 child: Column(
@@ -1460,11 +1654,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                       const SizedBox(width: TpTokens.space2),
                       Expanded(
-                        child: Slider(
+                        child: AdaptiveSlider(
                           value: minutes,
                           min: 0,
                           max: 1439,
                           divisions: 1439,
+                          semanticLabel: 'Time of day',
                           onChanged: _debugSetTime,
                         ),
                       ),
@@ -1561,10 +1756,10 @@ class _HomeHeaderEditButton extends StatelessWidget {
             child: TpPressScale(
               pressedScale: 0.92,
               child: Material(
-                color: colors.surfaceSubtle,
-                shape: CircleBorder(
-                  side: BorderSide(color: colors.divider, width: 0.75),
+                color: colors.textPrimary.withValues(
+                  alpha: colors.isDark ? 0.08 : 0.055,
                 ),
+                shape: const CircleBorder(),
                 clipBehavior: Clip.antiAlias,
                 child: TpTapSurface(
                   style: TpTapFeedbackStyle.button,
@@ -1572,8 +1767,8 @@ class _HomeHeaderEditButton extends StatelessWidget {
                   enablePressScale: false,
                   onTap: onPressed,
                   child: SizedBox(
-                    width: 38,
-                    height: 38,
+                    width: 36,
+                    height: 36,
                     child: Icon(
                       TpIcons.dashboard,
                       size: TpTokens.iconS,

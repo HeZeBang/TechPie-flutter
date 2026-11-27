@@ -14,12 +14,14 @@ class TpProgressRow extends StatelessWidget {
     required this.trailingLabel,
     required this.progress,
     required this.color,
+    this.trailingColor,
+    this.highlightTrailing = false,
     this.subtitle,
     this.onTap,
     this.showDivider = false,
     this.padding = const EdgeInsets.symmetric(
       horizontal: TpTokens.cardPaddingHorizontal,
-      vertical: 10,
+      vertical: 11,
     ),
   });
 
@@ -27,6 +29,8 @@ class TpProgressRow extends StatelessWidget {
   final String trailingLabel;
   final double progress;
   final Color color;
+  final Color? trailingColor;
+  final bool highlightTrailing;
   final String? subtitle;
   final VoidCallback? onTap;
   final bool showDivider;
@@ -36,6 +40,27 @@ class TpProgressRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final clamped = progress.clamp(0.05, 1.0);
+    final resolvedTrailingColor = trailingColor ?? color;
+    final Widget trailing = highlightTrailing
+        ? Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+            decoration: BoxDecoration(
+              color: resolvedTrailingColor.withValues(
+                alpha: colors.isDark ? 0.16 : 0.10,
+              ),
+              borderRadius: BorderRadius.circular(TpTokens.radiusPill),
+            ),
+            child: Text(
+              trailingLabel,
+              style: TpTypography.badge(resolvedTrailingColor),
+              maxLines: 1,
+            ),
+          )
+        : Text(
+            trailingLabel,
+            style: TpTypography.badge(resolvedTrailingColor),
+            maxLines: 1,
+          );
 
     final body = Padding(
       padding: padding,
@@ -54,15 +79,11 @@ class TpProgressRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: TpTokens.space2),
-              Text(
-                trailingLabel,
-                style: TpTypography.badge(color),
-                maxLines: 1,
-              ),
+              trailing,
             ],
           ),
           if (subtitle != null && subtitle!.isNotEmpty) ...[
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               subtitle!,
               style: TpTypography.itemMeta(colors),
@@ -70,7 +91,7 @@ class TpProgressRow extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             ),
           ],
-          const SizedBox(height: TpTokens.space2),
+          const SizedBox(height: 7),
           TpProgressBar(progress: clamped, color: color),
         ],
       ),
@@ -99,13 +120,13 @@ class TpProgressRow extends StatelessWidget {
   }
 }
 
-/// Reusable thin rounded progress bar (4dp height, subtle neutral track).
+/// Reusable thin rounded progress bar (3dp height, subtle neutral track).
 class TpProgressBar extends StatelessWidget {
   const TpProgressBar({
     super.key,
     required this.progress,
     required this.color,
-    this.height = TpTokens.progressBarHeight,
+    this.height = 3.0,
   });
 
   final double progress;

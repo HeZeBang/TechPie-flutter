@@ -54,11 +54,49 @@ Future<void> initializeCampusUserAgent() async {
 @visibleForTesting
 set debugUsesIosLiquidGlass(bool value) => _supportsIosLiquidGlass = value;
 
+/// Allows widget tests running on the Dart VM to exercise direct pre-iOS 26
+/// UIKit platform-view wrappers without running inside an iOS host process.
+@visibleForTesting
+bool debugForceDirectIosUiKitViews = false;
+
+/// Opts Dart-VM widget tests into native `techpie/macos_native_ui` modal
+/// channel calls (real macOS processes always use it).
+@visibleForTesting
+bool debugForceMacosNativeUiModals = false;
+
 /// Check if the current platform is iOS and not web.
 bool isIos() => !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
 
+/// Check if the current platform is macOS and not web.
+bool isMacOs() => !kIsWeb && defaultTargetPlatform == TargetPlatform.macOS;
+
+/// Check if the current platform is Apple (iOS or macOS) and not web.
+bool isApplePlatform() => isIos() || isMacOs();
+
+/// Whether macOS should render native AppKit platform views and desktop dialogs.
+bool usesMacOsNativeControls() => isMacOs();
+
+/// Whether macOS should present native `NSAlert`/`NSMenu` panels over the
+/// `'techpie/macos_native_ui'` channel. Real macOS processes always use native
+/// panels; headless `flutter test` defaults to Flutter fallbacks unless
+/// [debugForceMacosNativeUiModals] is enabled so unmocked channel calls do not
+/// stall FakeAsync.
+bool usesMacOsNativeUiModals() =>
+    usesMacOsNativeControls() &&
+    (!Platform.environment.containsKey('FLUTTER_TEST') ||
+        debugForceMacosNativeUiModals);
+
 /// Check whether the current iOS runtime supports Apple's Liquid Glass APIs.
 bool usesIosLiquidGlass() => isIos() && _supportsIosLiquidGlass;
+
+/// Whether pre-iOS 26 devices should use UIKit controls (`UISwitch`,
+/// `UISegmentedControl`, `UIMenu`, `UISlider`) directly instead of Flutter
+/// fallbacks. Guarded on `Platform.isIOS` so existing Dart-VM widget tests
+/// continue exercising `CNSwitch` / `CNSegmentedControl` unless opted in.
+bool usesDirectIosUiKitViews() =>
+    isIos() &&
+    !usesIosLiquidGlass() &&
+    (Platform.isIOS || debugForceDirectIosUiKitViews);
 
 /// Older iOS versions should use conventional, non-floating navigation bars.
 bool usesLegacyIosChrome() => isIos() && !_supportsIosLiquidGlass;

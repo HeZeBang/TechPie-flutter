@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/material.dart';
 
 import '../services/service_provider.dart';
@@ -8,6 +7,7 @@ import '../theme/theme.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_segmented_control.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
@@ -118,21 +118,24 @@ class _OaGymPageState extends State<OaGymPage>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: colors.brandSoft,
-                            borderRadius:
-                                BorderRadius.circular(TpTokens.radiusM),
+                        if (!auth.isLoggedIn)
+                          const TpBrandMark(size: 48)
+                        else
+                          Container(
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: colors.brandSoft,
+                              borderRadius:
+                                  BorderRadius.circular(TpTokens.radiusM),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              TpIcons.gym,
+                              size: TpTokens.iconL,
+                              color: colors.brandInk,
+                            ),
                           ),
-                          alignment: Alignment.center,
-                          child: Icon(
-                            TpIcons.gym,
-                            size: TpTokens.iconL,
-                            color: colors.brandInk,
-                          ),
-                        ),
                         const SizedBox(height: TpTokens.space4),
                         Text(
                           auth.isLoggedIn ? '需要绑定 IDS 账号' : '需要先登录 TechPie',
@@ -183,74 +186,10 @@ class _OaGymPageState extends State<OaGymPage>
                   0,
                 ),
                 child: TpPageBody(
-                  child: AdaptiveNavigationScaffold.adaptiveChrome(
-                    ios: () => CNSegmentedControl(
-                      labels: const ['预约', '查询', '个人信息'],
-                      selectedIndex: _selectedTab,
-                      shrinkWrap: true,
-                      onValueChanged: _tabController.animateTo,
-                    ),
-                    material: () => TpCard(
-                      borderRadius: TpTokens.radiusS,
-                      child: TabBar(
-                        controller: _tabController,
-                        dividerColor: Colors.transparent,
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        labelColor: colors.brandInk,
-                        unselectedLabelColor: colors.textMuted,
-                        indicatorColor: colors.brand,
-                        tabs: const [
-                          Tab(
-                            height: 44,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(TpIcons.calendarCheck, size: 16),
-                                SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    '预约',
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Tab(
-                            height: 44,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(TpIcons.search, size: 16),
-                                SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    '查询',
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Tab(
-                            height: 44,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(TpIcons.profile, size: 16),
-                                SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    '个人信息',
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  child: AdaptiveSegmentedControl(
+                    value: _selectedTab,
+                    segments: const ['预约', '查询', '个人信息'],
+                    onChanged: _tabController.animateTo,
                   ),
                 ),
               ),

@@ -66,6 +66,7 @@ SidebarBadgeData? computeDeadlineSidebarBadge(
 /// window, and on the root navigator otherwise. A value set before the shell
 /// mounts waits for it, which is what a cold start needs.
 final appShellPendingEcardEntry = ValueNotifier<CampusCardEntry?>(null);
+final appShellPendingSchedule = ValueNotifier<bool>(false);
 final appShellPendingDeadlines = ValueNotifier<bool>(false);
 final appShellPendingTab = ValueNotifier<int?>(null);
 final appShellPendingHomeEdit = ValueNotifier<bool>(false);
@@ -157,8 +158,12 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     appShellPendingEcardEntry.addListener(_showPendingEcardEntry);
+    appShellPendingSchedule.addListener(_showSchedule);
     appShellPendingDeadlines.addListener(_showDeadlines);
     appShellPendingTab.addListener(_showPendingTab);
+    if (appShellPendingSchedule.value) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _showSchedule());
+    }
     if (appShellPendingDeadlines.value) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showDeadlines());
     }
@@ -176,6 +181,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     appShellPendingEcardEntry.removeListener(_showPendingEcardEntry);
+    appShellPendingSchedule.removeListener(_showSchedule);
     appShellPendingDeadlines.removeListener(_showDeadlines);
     appShellPendingTab.removeListener(_showPendingTab);
     for (final controller in _tabHeroControllers.values) {
@@ -198,6 +204,15 @@ class _AppShellState extends State<AppShell> {
       return;
     }
     _onDestinationSelected(target);
+  }
+
+  void _showSchedule() {
+    if (!mounted || !appShellPendingSchedule.value) return;
+    appShellPendingSchedule.value = false;
+    _tabNavigatorKeys[AppShell.scheduleTabIndex]
+        ?.currentState
+        ?.popUntil((route) => route.isFirst);
+    _onDestinationSelected(AppShell.scheduleTabIndex);
   }
 
   void _showDeadlines() {

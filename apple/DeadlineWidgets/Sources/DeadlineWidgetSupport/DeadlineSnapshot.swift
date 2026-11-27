@@ -18,6 +18,18 @@ public struct DeadlineItem: Codable, Equatable, Identifiable {
     self.subtitle = subtitle
     self.dueAt = dueAt
   }
+
+  public func urgency(at now: Date) -> DeadlineUrgency {
+    let remaining = due.timeIntervalSince(now)
+    if remaining <= 0 { return .overdue }
+    if remaining <= 24 * 3600 { return .urgent }
+    if remaining <= 72 * 3600 { return .soon }
+    return .upcoming
+  }
+}
+
+public enum DeadlineUrgency: Equatable, Sendable {
+  case overdue, urgent, soon, upcoming
 }
 
 public struct DeadlineSnapshot: Codable, Equatable {

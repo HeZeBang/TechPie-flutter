@@ -109,10 +109,7 @@ AppRuntime buildRealRuntime(
   );
   final offline = OfflinePaymentService(
     credentials: offlineCredentials,
-    remote: EcardOfflineAuthorizationRemote(
-      client: client,
-      backendSecurityApproval: true,
-    ),
+    remote: EcardOfflineAuthorizationRemote(client: client),
     connectivity: connectivity,
     crypto: Sm2OfflineCrypto(),
     deviceCodeReader: sessionStore.readOpenId,

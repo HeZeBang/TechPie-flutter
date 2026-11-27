@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:techpie/widgets/adaptive_select.dart';
 
 import '../../app/app_providers.dart';
 import '../../domain/models/card_models.dart';
@@ -129,38 +130,33 @@ class _BindCardScreenState extends ConsumerState<BindCardScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 18,
-                      vertical: 4,
+                      vertical: 8,
                     ),
-                    child: DropdownButtonFormField<IdentityDocumentType>(
-                      // Flutter 3.27 uses value; newer SDKs call it initialValue.
-                      // ignore: deprecated_member_use
-                      value: _type,
-                      dropdownColor: context.gpColors.surface,
-                      decoration: const InputDecoration(
-                        labelText: '证件类型',
-                        filled: false,
-                        border: InputBorder.none,
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: IdentityDocumentType.nationalId,
-                          child: Text('居民身份证'),
+                    child: AdaptiveSelect(
+                      label: '证件类型',
+                      width: double.infinity,
+                      value: _type.name,
+                      options: const [
+                        AdaptiveSelectOption(
+                          value: 'nationalId',
+                          label: '居民身份证',
                         ),
-                        DropdownMenuItem(
-                          value: IdentityDocumentType.militaryId,
-                          child: Text('军人证件'),
+                        AdaptiveSelectOption(
+                          value: 'militaryId',
+                          label: '军人证件',
                         ),
-                        DropdownMenuItem(
-                          value: IdentityDocumentType.passport,
-                          child: Text('护照'),
+                        AdaptiveSelectOption(
+                          value: 'passport',
+                          label: '护照',
                         ),
-                        DropdownMenuItem(
-                          value: IdentityDocumentType.workId,
-                          child: Text('工作证'),
+                        AdaptiveSelectOption(
+                          value: 'workId',
+                          label: '工作证',
                         ),
                       ],
-                      onChanged: (value) =>
-                          setState(() => _type = value ?? _type),
+                      onChanged: (value) => setState(
+                        () => _type = IdentityDocumentType.values.byName(value),
+                      ),
                     ),
                   ),
                   _Field(

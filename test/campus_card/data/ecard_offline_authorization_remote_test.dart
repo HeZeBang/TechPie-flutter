@@ -18,10 +18,7 @@ void main() {
           },
         },
       });
-    final remote = EcardOfflineAuthorizationRemote(
-      client: transport,
-      backendSecurityApproval: true,
-    );
+    final remote = EcardOfflineAuthorizationRemote(client: transport);
 
     final response = await remote.activate(
       OfflineActivationRequest(
@@ -49,10 +46,7 @@ void main() {
           },
         },
       });
-    final remote = EcardOfflineAuthorizationRemote(
-      client: transport,
-      backendSecurityApproval: true,
-    );
+    final remote = EcardOfflineAuthorizationRemote(client: transport);
 
     final response = await remote.renew(
       OfflineAuthorization(

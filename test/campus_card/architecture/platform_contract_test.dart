@@ -76,11 +76,20 @@ void main() {
     final project = File(
       'ios/Runner.xcodeproj/project.pbxproj',
     ).readAsStringSync();
+    final manifest = File(
+      'android/app/src/main/AndroidManifest.xml',
+    ).readAsStringSync();
 
     // The URL scheme is the contract between the widget process and the app; the
     // appex target is what puts the widget on the home screen at all.
     expect(widget, contains('techpie://ecard/pay'));
     expect(project, contains('EcardPayWidget.appex'));
+    expect(manifest, contains('EcardPayWidgetProvider'));
+    expect(manifest, contains('ScheduleWidgetProvider'));
+    expect(manifest, contains('DeadlineWidgetProvider'));
+    expect(manifest, contains('TodayOverviewWidgetProvider'));
+    expect(manifest, contains('android:host="schedule"'));
+    expect(manifest, contains('android:host="deadlines"'));
   });
 
   test('feature icons go through the platform icon layer', () {

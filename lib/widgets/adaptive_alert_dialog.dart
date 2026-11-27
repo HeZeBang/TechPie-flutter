@@ -1,8 +1,11 @@
 import 'package:cupertino_native_better/cupertino_native_better.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../theme/theme.dart';
+import '../utils/platform.dart';
+import 'macos/macos_native_controls.dart';
 
 class AdaptiveAlertAction<T> {
   const AdaptiveAlertAction({
@@ -10,12 +13,14 @@ class AdaptiveAlertAction<T> {
     this.value,
     this.isDestructive = false,
     this.isDefault = false,
+    this.isCancel = false,
   });
 
   final String label;
   final T? value;
   final bool isDestructive;
   final bool isDefault;
+  final bool isCancel;
 }
 
 Future<T?> showAdaptiveAlertDialog<T>({
@@ -23,11 +28,23 @@ Future<T?> showAdaptiveAlertDialog<T>({
   required String title,
   required String message,
   required List<AdaptiveAlertAction<T>> actions,
+  bool useRootNavigator = true,
   bool centerContent = false,
 }) {
-  final usesIosDialog = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
   final normalizedActions = _normalizeActions(actions);
 
+  if (usesMacOsNativeUiModals()) {
+    return _showNativeMacOsAlert<T>(
+      context: context,
+      title: title,
+      message: message,
+      actions: normalizedActions,
+      useRootNavigator: useRootNavigator,
+      centerContent: centerContent,
+    );
+  }
+
+  final usesIosDialog = !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
   if (usesIosDialog) {
     return _showNativeIosAlert<T>(
       title: title,
@@ -42,6 +59,7 @@ Future<T?> showAdaptiveAlertDialog<T>({
     title: title,
     message: message,
     actions: normalizedActions,
+    useRootNavigator: useRootNavigator,
     centerContent: centerContent,
   );
 }
@@ -57,12 +75,53 @@ List<AdaptiveAlertAction<T>> _normalizeActions<T>(
           value: action.value,
           isDestructive: action.isDestructive,
           isDefault: action.isDefault,
+          isCancel: action.isCancel ||
+              (!action.isDefault &&
+                  !action.isDestructive &&
+                  action.label.trim() == '取消'),
         ),
   ];
 
   if (normalized.isNotEmpty) return normalized;
 
   return [AdaptiveAlertAction<T>(label: 'OK', isDefault: true)];
+}
+
+Future<T?> _showNativeMacOsAlert<T>({
+  required BuildContext context,
+  required String title,
+  required String message,
+  required List<AdaptiveAlertAction<T>> actions,
+  bool useRootNavigator = true,
+  required bool centerContent,
+}) async {
+  try {
+    final index = await MacosNativeUi.showAlert(
+      title: title,
+      message: message,
+      actions: [
+        for (final action in actions)
+          <String, Object?>{
+            'label': action.label,
+            'isDefault': action.isDefault,
+            'isCancel': action.isCancel,
+            'isDestructive': action.isDestructive,
+          },
+      ],
+    );
+    if (index == null || index < 0 || index >= actions.length) return null;
+    return actions[index].value;
+  } on MissingPluginException {
+    if (!context.mounted) return null;
+    return _showFlutterAlertDialog<T>(
+      context: context,
+      title: title,
+      message: message,
+      actions: actions,
+      useRootNavigator: useRootNavigator,
+      centerContent: centerContent,
+    );
+  }
 }
 
 Future<T?> _showNativeIosAlert<T>({
@@ -81,6 +140,9 @@ Future<T?> _showNativeIosAlert<T>({
           label: actions[i].label,
           value: actions[i].value,
           isDestructive: actions[i].isDestructive,
+          isCancel: actions[i].isCancel &&
+              !actions[i].isDestructive &&
+              !actions.take(i).any((action) => action.isCancel),
           isDefault: actions[i].isDefault && !actions.take(i).any((action) => action.isDefault),
         ),
     ],
@@ -93,10 +155,12 @@ Future<T?> _showFlutterAlertDialog<T>({
   required String title,
   required String message,
   required List<AdaptiveAlertAction<T>> actions,
+  bool useRootNavigator = true,
   required bool centerContent,
 }) {
   return showDialog<T>(
     context: context,
+    useRootNavigator: useRootNavigator,
     builder: (dialogContext) {
       final colors = dialogContext.tpColors;
       final alignment = centerContent ? TextAlign.center : null;

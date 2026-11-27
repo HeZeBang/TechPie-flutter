@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import '../../models/oa_gym.dart';
 import '../../services/service_provider.dart';
 import '../../theme/theme.dart';
+import '../adaptive_alert_dialog.dart';
 import '../adaptive_button.dart';
 import '../adaptive_date_picker.dart';
+import '../adaptive_progress_indicator.dart';
 import '../app_shell/app_shell_metrics.dart';
 import '../design_system/design_system.dart';
 import 'gym_shared.dart';
@@ -49,14 +51,19 @@ class _GymBookingTabState extends State<GymBookingTab>
 
   Future<void> _pickDate() async {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     final maxDate = now.hour >= 12
         ? DateTime(now.year, now.month, now.day + 2)
         : DateTime(now.year, now.month, now.day + 1);
+    final currentDay = DateTime(_date.year, _date.month, _date.day);
+    final initialDate = currentDay.isBefore(today)
+        ? today
+        : (currentDay.isAfter(maxDate) ? maxDate : currentDay);
     final picked = await showAdaptiveDatePicker(
       context: context,
       title: '预约日期',
-      initialDate: _date,
-      firstDate: DateTime(now.year, now.month, now.day),
+      initialDate: initialDate,
+      firstDate: today,
       lastDate: maxDate,
     );
     if (picked == null) return;
@@ -120,6 +127,39 @@ class _GymBookingTabState extends State<GymBookingTab>
       );
       return;
     }
+
+    final date = _dateString;
+    final selections = {
+      for (final entry in _selectedCourts.entries)
+        entry.key: Set<int>.of(entry.value),
+    };
+    final summaryLines = <String>[];
+    for (final entry in selections.entries) {
+      final parts = entry.key.split('|');
+      final sport = OaSport.values.firstWhere((item) => item.id == parts[0]);
+      final slot = int.parse(parts[1]);
+      final courts = entry.value.toList()..sort();
+      summaryLines.add(
+        '${sport.label} ${oaTimeSlots[slot - 1].range}：'
+        '${courts.map((c) => '$c号').join('、')}',
+      );
+    }
+
+    final confirmed = await showAdaptiveAlertDialog<bool>(
+      context: context,
+      title: '确认提交场馆预约？',
+      message: '日期：$date\n${summaryLines.join('\n')}',
+      actions: const [
+        AdaptiveAlertAction<bool>(label: '取消', value: false),
+        AdaptiveAlertAction<bool>(
+          label: '确认预约',
+          value: true,
+          isDefault: true,
+        ),
+      ],
+    );
+    if (!mounted || confirmed != true) return;
+
     setState(() {
       _submitting = true;
       _error = null;
@@ -128,11 +168,6 @@ class _GymBookingTabState extends State<GymBookingTab>
 
     final service = ServiceProvider.of(context).oaGymService;
     final messages = <String>[];
-    final date = _dateString;
-    final selections = {
-      for (final entry in _selectedCourts.entries)
-        entry.key: Set<int>.of(entry.value),
-    };
     final submitted = <String>{};
     var allSuccess = true;
     try {
@@ -165,12 +200,16 @@ class _GymBookingTabState extends State<GymBookingTab>
       await _refreshAvailability(preserveResult: true);
     } catch (e) {
       if (!mounted) return;
-      setState(() => _error = e.toString());
+      final errorMessage = e.toString();
       if (messages.isNotEmpty) {
         setState(() {
           _result = messages.join('\n');
           _selectedCourts.clear();
         });
+        await _refreshAvailability(preserveResult: true);
+      }
+      if (mounted) {
+        setState(() => _error = errorMessage);
       }
     } finally {
       if (mounted) setState(() => _submitting = false);
@@ -397,11 +436,7 @@ class _GymBookingTabState extends State<GymBookingTab>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
+                      const AdaptiveActivityIndicator(size: 18, strokeWidth: 2),
                       const SizedBox(width: TpTokens.space3),
                       Text(
                         '正在查询 ${_availability.length}/${_sports.length * _selectedSlots.length} 个时段',
@@ -448,7 +483,7 @@ class _GymBookingTabState extends State<GymBookingTab>
                 onPressed: _submitting || _checking || _selectedCount == 0
                     ? null
                     : _submit,
-                icon: Icons.send,
+                icon: TpIcons.send,
                 sfSymbol: 'paperplane.fill',
                 label:
                     _selectedCount == 0 ? '提交预约' : '提交预约 ($_selectedCount)',

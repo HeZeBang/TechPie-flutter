@@ -275,28 +275,38 @@ void main() {
         lessThan(tester.getTopLeft(accountTile).dy),
       );
 
-      // Collapsing to 78px rail hides the brand row while keeping toggle above command trigger.
+      // Collapsing to 78px rail keeps the centered TpBrandMark clickable between
+      // the toggle button and command trigger while hiding wordmark labels.
       await tester.tap(toggleButton);
       await tester.pumpAndSettle();
       expect(
         tester.getSize(find.byType(DesktopSidebar)).width,
         closeTo(DesktopSidebarTokens.collapsedWidth, 0.5),
       );
-      expect(brandTile, findsNothing);
+      expect(brandTile, findsOneWidget);
       expect(
         find.descendant(
-          of: find.byType(DesktopSidebar),
+          of: brandTile,
           matching: find.byType(TpBrandMark),
         ),
-        findsNothing,
+        findsOneWidget,
       );
+      expect(find.descendant(of: brandTile, matching: find.text('TechPie')), findsNothing);
       expect(
         tester.getTopLeft(toggleButton).dy,
+        lessThan(tester.getTopLeft(brandTile).dy),
+      );
+      expect(
+        tester.getTopLeft(brandTile).dy,
         lessThan(tester.getTopLeft(commandTrigger).dy),
       );
       await tester.tap(toggleButton);
       await tester.pumpAndSettle();
       expect(brandTile, findsOneWidget);
+      expect(
+        find.descendant(of: brandTile, matching: find.text('TechPie')),
+        findsOneWidget,
+      );
 
       // Tapping account footer opens Settings, highlights the account tile,
       // and fades out the upper nav sliding indicator.

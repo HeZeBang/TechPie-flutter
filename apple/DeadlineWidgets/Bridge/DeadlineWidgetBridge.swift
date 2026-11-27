@@ -31,7 +31,10 @@ final class DeadlineWidgetBridge {
               guard let json = call.arguments as? String, let data = json.data(using: .utf8) else { throw DeadlineSnapshot.SnapshotError.invalidData }
               changed = try store.write(data)
             }
-            if changed, #available(macOS 11.0, *) { WidgetCenter.shared.reloadTimelines(ofKind: "DeadlineWidget") }
+            if changed, #available(iOS 14.0, macOS 11.0, *) {
+              WidgetCenter.shared.reloadTimelines(ofKind: "DeadlineWidget")
+              WidgetCenter.shared.reloadTimelines(ofKind: "TodayOverviewWidget")
+            }
             DispatchQueue.main.async { result(nil) }
           } catch {
             DispatchQueue.main.async { result(FlutterError(code: "DEADLINE_WIDGET_STORAGE_UNAVAILABLE", message: "Cannot update deadline widget data.", details: nil)) }

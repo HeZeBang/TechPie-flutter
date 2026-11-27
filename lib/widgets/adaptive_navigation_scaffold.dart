@@ -55,6 +55,14 @@ class AdaptiveNavigationScaffold extends StatefulWidget {
   }) =>
       isIos() ? ios() : material();
 
+  /// Chooses between Apple (iOS + macOS) and Material chrome widgets while
+  /// keeping page code free of direct platform branches.
+  static Widget adaptiveAppleChrome({
+    required Widget Function() apple,
+    required Widget Function() material,
+  }) =>
+      isApplePlatform() ? apple() : material();
+
   /// Shows a platform-appropriate modal bottom sheet with matching grabber and
   /// top padding conventions.
   static Future<T?> showSheet<T>({

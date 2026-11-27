@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:techpie/widgets/adaptive_alert_dialog.dart';
 
 import '../../app/app_providers.dart';
 import '../../domain/models/security_models.dart';
@@ -86,18 +87,14 @@ class _SecurityLimitScreenState extends ConsumerState<SecurityLimitScreen> {
         ),),
       );
 
-  Future<void> _showMessage(String message) => showAdaptiveDialog<void>(
+  Future<void> _showMessage(String message) => showAdaptiveAlertDialog<void>(
         context: context,
         useRootNavigator: false,
-        builder: (dialogContext) => AlertDialog.adaptive(
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: const Text('完成'),
-            ),
-          ],
-        ),
+        title: '消费限额',
+        message: message,
+        actions: const [
+          AdaptiveAlertAction<void>(label: '完成', isDefault: true),
+        ],
       );
 
   @override

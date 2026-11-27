@@ -54,13 +54,16 @@ class IosNativeSelect extends StatelessWidget {
     final selected = options.where((option) => option.value == value).firstOrNull;
     final title = selected?.label ?? placeholder;
     final buttonTint = tint ?? Theme.of(context).colorScheme.onSurface;
-    if (usesIosLiquidGlass() && shrinkWrap && buttonStyle == CNButtonStyle.plain) {
+    if ((usesIosLiquidGlass() && shrinkWrap && buttonStyle == CNButtonStyle.plain) ||
+        usesDirectIosUiKitViews()) {
       return IgnorePointer(
         ignoring: options.isEmpty,
         child: _InlinePopupMenu(
           title: title,
           accessibilityLabel: accessibilityLabel,
           tint: CupertinoDynamicColor.resolve(buttonTint, context).toARGB32(),
+          buttonStyleName: buttonStyle.name,
+          shrinkWrap: shrinkWrap,
           isDark: ThemeHelper.isDark(context),
           items: [
             for (final option in options)
@@ -124,6 +127,8 @@ class _InlinePopupMenu extends StatefulWidget {
     required this.title,
     required this.accessibilityLabel,
     required this.tint,
+    required this.buttonStyleName,
+    required this.shrinkWrap,
     required this.isDark,
     required this.items,
     required this.onSelected,
@@ -132,6 +137,8 @@ class _InlinePopupMenu extends StatefulWidget {
   final String title;
   final String accessibilityLabel;
   final int tint;
+  final String buttonStyleName;
+  final bool shrinkWrap;
   final bool isDark;
   final List<_InlineMenuItem> items;
   final ValueChanged<int> onSelected;
@@ -241,35 +248,41 @@ class _InlinePopupMenuState extends State<_InlinePopupMenu> with ModalHideMixin<
       textScaler: MediaQuery.textScalerOf(context),
       maxLines: 1,
     )..layout();
-    final width = math.max(_width, title.width.ceilToDouble() + 28);
+    final intrinsic = math.max(_width, title.width.ceilToDouble() + 28);
     title.dispose();
-    final placeholder = maybeHiddenPlaceholder(height: height, width: width);
-    if (placeholder != null) {
-      _detachChannel();
-      return placeholder;
-    }
-    return ClipRect(
-      child: SizedBox(
-        height: height,
-        width: width,
-        child: UiKitView(
-          viewType: _viewType,
-          creationParams: {
-            'buttonTitle': widget.title,
-            'semanticLabel': widget.accessibilityLabel,
-            'buttonStyle': 'plain',
-            'isDark': widget.isDark,
-            'style': {'tint': widget.tint},
-            'preserveTopToBottomOrder': true,
-            ..._menuItems,
-          },
-          creationParamsCodec: const StandardMessageCodec(),
-          onPlatformViewCreated: _onCreated,
-          gestureRecognizers: const {
-            Factory<TapGestureRecognizer>(TapGestureRecognizer.new),
-          },
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final useIntrinsic = widget.shrinkWrap || !constraints.hasBoundedWidth;
+        final width = useIntrinsic ? intrinsic : constraints.maxWidth;
+        final placeholder = maybeHiddenPlaceholder(height: height, width: width);
+        if (placeholder != null) {
+          _detachChannel();
+          return placeholder;
+        }
+        return ClipRect(
+          child: SizedBox(
+            height: height,
+            width: width,
+            child: UiKitView(
+              viewType: _viewType,
+              creationParams: {
+                'buttonTitle': widget.title,
+                'semanticLabel': widget.accessibilityLabel,
+                'buttonStyle': widget.buttonStyleName,
+                'isDark': widget.isDark,
+                'style': {'tint': widget.tint},
+                'preserveTopToBottomOrder': true,
+                ..._menuItems,
+              },
+              creationParamsCodec: const StandardMessageCodec(),
+              onPlatformViewCreated: _onCreated,
+              gestureRecognizers: const {
+                Factory<TapGestureRecognizer>(TapGestureRecognizer.new),
+              },
+            ),
+          ),
+        );
+      },
     );
   }
 }

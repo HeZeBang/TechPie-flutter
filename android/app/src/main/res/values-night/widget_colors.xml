@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_surface">#FF1C1D22</color>
+    <color name="widget_surface_subtle">#FF262830</color>
+    <color name="widget_border">#26FFFFFF</color>
+    <color name="widget_divider">#1FFFFFFF</color>
+    <color name="widget_text_primary">#FFF3F4F6</color>
+    <color name="widget_text_secondary">#FFA6ABB6</color>
+    <color name="widget_text_muted">#FF757B87</color>
+    <color name="widget_brand_ink">#FFFF6B6B</color>
+    <color name="widget_brand_soft">#2EFF6B6B</color>
+    <color name="widget_amber_ink">#FFFBBF24</color>
+    <color name="widget_amber_soft">#2EFBBF24</color>
+    <color name="widget_urgency_urgent">#FFFF6B6B</color>
+    <color name="widget_urgency_soon">#FFFBBF24</color>
+    <color name="widget_urgency_normal">#FF757B87</color>
+    <color name="widget_ecard_start">#FF981427</color>
+    <color name="widget_ecard_end">#FF650915</color>
+    <color name="widget_ecard_border">#2EFFFFFF</color>
+    <color name="widget_ecard_badge_bg">#24FFFFFF</color>
+</resources>

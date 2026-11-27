@@ -29,6 +29,7 @@ import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_button.dart';
 import '../widgets/adaptive_navigation_scaffold.dart';
 import '../widgets/adaptive_page_navigation.dart';
+import '../widgets/adaptive_progress_indicator.dart';
 import '../widgets/adaptive_select.dart';
 import '../widgets/adaptive_switch.dart';
 import '../widgets/app_shell/app_shell_metrics.dart';
@@ -507,12 +508,9 @@ class _SettingsBodyState extends State<_SettingsBody> {
                                     : '点击检查 $updateSourceLabel 最新版本'),
                             value: _appVersion.isEmpty ? null : 'v$_appVersion',
                             trailing: _checkingUpdate
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
+                                ? const AdaptiveActivityIndicator(
+                                    size: 18,
+                                    strokeWidth: 2,
                                   )
                                 : null,
                             showChevron: !_checkingUpdate,
@@ -672,7 +670,10 @@ class _SettingsBodyState extends State<_SettingsBody> {
                 children: [
                   Row(
                     children: [
-                      const TpAvatarBadge(text: 'GP', size: 46),
+                      const TpBrandMark(
+                        size: 40,
+                        variant: TpBrandMarkVariant.badge,
+                      ),
                       const SizedBox(width: TpTokens.space3),
                       Expanded(
                         child: Column(
@@ -1257,28 +1258,12 @@ class _ProxySettingsDialogState extends State<_ProxySettingsDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('启用应用代理', style: TpTypography.itemTitle(colors)),
-                      const SizedBox(height: 2),
-                      Text(
-                        '使用自定义 HTTP 代理转发请求',
-                        style: TpTypography.itemMeta(colors),
-                      ),
-                    ],
-                  ),
-                ),
-                AdaptiveSwitch(
-                  key: const ValueKey('settings.app-proxy-enabled'),
-                  value: _enabled,
-                  onChanged: (value) => setState(() => _enabled = value),
-                ),
-              ],
+            AdaptiveSwitchRow(
+              key: const ValueKey('settings.app-proxy-enabled'),
+              title: '启用应用代理',
+              subtitle: '使用自定义 HTTP 代理转发请求',
+              value: _enabled,
+              onChanged: (value) => setState(() => _enabled = value),
             ),
             const SizedBox(height: TpTokens.space3),
             TextField(
@@ -1315,23 +1300,17 @@ class _SettingsBrandFooter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tpColors;
-    return Padding(
-      key: const ValueKey('settings.brand-footer'),
-      padding: const EdgeInsets.only(bottom: TpTokens.space4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const TpBrandMark(size: 20),
-          const SizedBox(height: TpTokens.space2),
-          Text(
-            'TechPie · Built with Flutter by GeekPie_',
-            style: TpTypography.cardMeta(colors).copyWith(
-              color: colors.textMuted,
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
+    return const Padding(
+      key: ValueKey('settings.brand-footer'),
+      padding: EdgeInsets.only(top: TpTokens.space2, bottom: TpTokens.space4),
+      child: TpBrandLockup(
+        markSize: 22,
+        wordmarkSize: 15,
+        subtitleSize: 11.5,
+        axis: Axis.vertical,
+        showSubtitle: true,
+        subtitlePrefix: 'ShanghaiTech · GeekPie',
+        subtitleAccentSuffix: '',
       ),
     );
   }

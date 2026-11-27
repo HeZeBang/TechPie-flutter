@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/deadline_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_surface_bg"
+    android:clipToOutline="true"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageView
+            android:layout_width="16dp"
+            android:layout_height="16dp"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_widget_deadline"/>
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:text="@string/widget_deadline_title"
+            android:textColor="@color/widget_brand_ink"
+            android:textSize="13sp"/>
+
+        <TextView
+            android:id="@+id/deadline_count_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_pill_brand"
+            android:fontFamily="monospace"
+            android:maxLines="1"
+            android:paddingStart="8dp"
+            android:paddingTop="2dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="2dp"
+            android:text="0"
+            android:textColor="@color/widget_brand_ink"
+            android:textSize="11sp"
+            android:textStyle="bold"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/deadline_empty_state"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:text="@string/widget_deadlines_empty"
+        android:textColor="@color/widget_text_secondary"
+        android:textSize="13sp"
+        android:visibility="gone"/>
+
+    <LinearLayout android:id="@+id/deadline_row_1" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:gravity="center_vertical" android:orientation="horizontal">
+        <TextView android:id="@+id/deadline_row_1_bar" android:layout_width="3dp" android:layout_height="28dp" android:background="@color/widget_urgency_urgent" android:importantForAccessibility="no"/>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/deadline_row_1_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1" android:textColor="@color/widget_text_primary" android:textSize="13sp"/>
+            <TextView android:id="@+id/deadline_row_1_subtitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:maxLines="1" android:textColor="@color/widget_text_secondary" android:textSize="11sp"/>
+        </LinearLayout>
+        <TextView android:id="@+id/deadline_row_1_countdown" android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="@drawable/widget_pill_brand" android:fontFamily="monospace" android:maxLines="1" android:paddingStart="7dp" android:paddingTop="2dp" android:paddingEnd="7dp" android:paddingBottom="2dp" android:textColor="@color/widget_brand_ink" android:textSize="11sp" android:textStyle="bold"/>
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/deadline_row_2" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7dp" android:gravity="center_vertical" android:orientation="horizontal">
+        <TextView android:id="@+id/deadline_row_2_bar" android:layout_width="3dp" android:layout_height="28dp" android:background="@color/widget_urgency_soon" android:importantForAccessibility="no"/>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/deadline_row_2_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1" android:textColor="@color/widget_text_primary" android:textSize="13sp"/>
+            <TextView android:id="@+id/deadline_row_2_subtitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:maxLines="1" android:textColor="@color/widget_text_secondary" android:textSize="11sp"/>
+        </LinearLayout>
+        <TextView android:id="@+id/deadline_row_2_countdown" android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="@drawable/widget_pill_amber" android:fontFamily="monospace" android:maxLines="1" android:paddingStart="7dp" android:paddingTop="2dp" android:paddingEnd="7dp" android:paddingBottom="2dp" android:textColor="@color/widget_amber_ink" android:textSize="11sp" android:textStyle="bold"/>
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/deadline_row_3" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7dp" android:gravity="center_vertical" android:orientation="horizontal">
+        <TextView android:id="@+id/deadline_row_3_bar" android:layout_width="3dp" android:layout_height="28dp" android:background="@color/widget_urgency_normal" android:importantForAccessibility="no"/>
+        <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:orientation="vertical">
+            <TextView android:id="@+id/deadline_row_3_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1" android:textColor="@color/widget_text_primary" android:textSize="13sp"/>
+            <TextView android:id="@+id/deadline_row_3_subtitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:ellipsize="end" android:maxLines="1" android:textColor="@color/widget_text_secondary" android:textSize="11sp"/>
+        </LinearLayout>
+        <TextView android:id="@+id/deadline_row_3_countdown" android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="@drawable/widget_pill_muted" android:fontFamily="monospace" android:maxLines="1" android:paddingStart="7dp" android:paddingTop="2dp" android:paddingEnd="7dp" android:paddingBottom="2dp" android:textColor="@color/widget_text_secondary" android:textSize="11sp" android:textStyle="bold"/>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/deadline_overflow_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:gravity="end"
+        android:textColor="@color/widget_text_muted"
+        android:textSize="10sp"
+        android:visibility="gone"/>
+</LinearLayout>

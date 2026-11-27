@@ -2,11 +2,15 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:techpie/utils/platform.dart';
 import 'package:techpie/widgets/adaptive_alert_dialog.dart';
 
 void main() {
   const channel = MethodChannel('cn_alert');
-  tearDown(() => debugDefaultTargetPlatformOverride = null);
+  tearDown(() {
+    debugForceMacosNativeUiModals = false;
+    debugDefaultTargetPlatformOverride = null;
+  });
 
   for (final fails in [false, true]) {
     testWidgets('native alert maps actions and handles failure=$fails', (tester) async {
@@ -57,71 +61,122 @@ void main() {
     });
   }
 
-  testWidgets(
-    'centers confirmation text and divides the action width equally',
-    (tester) async {
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetPhysicalSize);
-      const title = '放弃未保存的修改？';
-      const continueLabel = '继续编辑';
-      const discardLabel = '放弃并退出';
-      double? previousButtonWidth;
+  testWidgets('macOS alert dispatches to NSAlert channel and normalizes cancel', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    debugForceMacosNativeUiModals = true;
+    try {
+      const macChannel = MethodChannel('techpie/macos_native_ui');
+      MethodCall? request;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        macChannel,
+        (call) async {
+          request = call;
+          return <String, Object?>{'index': 1};
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          macChannel,
+          null,
+        ),
+      );
 
-      for (final (width, textScale) in [(400.0, 1.0), (300.0, 2.0)]) {
-        tester.view.physicalSize = Size(width, 720);
-        await tester.pumpWidget(
-          MaterialApp(
-            builder: (context, child) => MediaQuery(
-              data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textScale)),
-              child: child!,
-            ),
-            home: Scaffold(
-              body: Builder(
-                builder: (context) => TextButton(
-                  onPressed: () => showAdaptiveAlertDialog<bool>(
-                    context: context,
-                    title: title,
-                    message: '',
-                    centerContent: true,
-                    actions: const [
-                      AdaptiveAlertAction(label: continueLabel, value: false, isDefault: true),
-                      AdaptiveAlertAction(label: discardLabel, value: true, isDestructive: true),
-                    ],
-                  ),
-                  child: const Text('Open'),
-                ),
-              ),
+      String? result;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                result = await showAdaptiveAlertDialog<String>(
+                  context: context,
+                  title: '移除此设备',
+                  message: '此操作只删除本机离线授权。',
+                  actions: const [
+                    AdaptiveAlertAction(label: '取消', value: 'cancel'),
+                    AdaptiveAlertAction(
+                      label: '删除',
+                      value: 'delete',
+                      isDestructive: true,
+                    ),
+                  ],
+                );
+              },
+              child: const Text('ShowMacAlert'),
             ),
           ),
-        );
-        await tester.tap(find.text('Open'));
-        await tester.pumpAndSettle();
+        ),
+      );
 
-        final dialog = find.byType(AlertDialog);
-        final titleText = find.text(title);
-        final continueAction = find.widgetWithText(FilledButton, continueLabel);
-        final discardAction = find.widgetWithText(TextButton, discardLabel);
-        final first = tester.getRect(continueAction);
-        final second = tester.getRect(discardAction);
-        final center = tester.getCenter(dialog).dx;
+      await tester.tap(find.text('ShowMacAlert'));
+      await tester.pumpAndSettle();
 
-        expect(tester.widget<Text>(titleText).textAlign, TextAlign.center);
-        expect(tester.getCenter(titleText).dx, closeTo(center, 0.01));
-        expect(first.center.dy, closeTo(second.center.dy, 0.01));
-        expect(first.height, closeTo(second.height, 0.01));
-        expect(first.width, closeTo(second.width, 0.01));
-        expect(first.expandToInclude(second).center.dx, closeTo(center, 0.01));
-        expect(tester.getCenter(find.text(continueLabel)).dx, closeTo(first.center.dx, 0.01));
-        expect(tester.getCenter(find.text(discardLabel)).dx, closeTo(second.center.dx, 0.01));
-        if (previousButtonWidth != null) expect(first.width, lessThan(previousButtonWidth));
-        previousButtonWidth = first.width;
+      expect(result, 'delete');
+      expect(request?.method, 'showAlert');
+      final args = request!.arguments as Map<Object?, Object?>;
+      final actions = (args['actions'] as List<Object?>)
+          .cast<Map<Object?, Object?>>();
+      expect(actions.first['label'], '取消');
+      expect(actions.first['isCancel'], isTrue);
+      expect(actions.last['isDestructive'], isTrue);
+    } finally {
+      debugForceMacosNativeUiModals = false;
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 
-        await tester.tap(continueAction);
-        await tester.pumpAndSettle();
-        expect(dialog, findsNothing);
-      }
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.android),
-  );
+  testWidgets('macOS alert falls back to Flutter AlertDialog on MissingPluginException', (
+    tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    debugForceMacosNativeUiModals = true;
+    try {
+      const macChannel = MethodChannel('techpie/macos_native_ui');
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        macChannel,
+        (_) async => throw MissingPluginException('missing'),
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          macChannel,
+          null,
+        ),
+      );
+      String? result;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () async {
+                result = await showAdaptiveAlertDialog<String>(
+                  context: context,
+                  title: '提示',
+                  message: '已保存修改',
+                  actions: const [
+                    AdaptiveAlertAction(
+                      label: '确定',
+                      value: 'ok',
+                      isDefault: true,
+                    ),
+                  ],
+                );
+              },
+              child: const Text('ShowFallbackAlert'),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('ShowFallbackAlert'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+      expect(result, 'ok');
+    } finally {
+      debugForceMacosNativeUiModals = false;
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
 }

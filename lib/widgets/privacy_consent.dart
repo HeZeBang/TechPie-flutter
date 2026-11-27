@@ -4,7 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/service_provider.dart';
+import 'adaptive_alert_dialog.dart';
 import 'adaptive_button.dart';
+import 'adaptive_checkbox.dart';
+import 'design_system/tp_brand_mark.dart';
 
 const privacyPolicyUrl = 'https://techpie.geekpie.club/privacy';
 
@@ -46,13 +49,15 @@ class _PrivacyGateState extends State<PrivacyGate> {
     if (storage.privacyAccepted) return widget.child;
     return PrivacyConsentPage(
       onAccept: _accept,
-      usageChoice: ServiceProvider.of(context).telemetry == null ? null : CheckboxListTile(
-        contentPadding: EdgeInsets.zero,
-        value: _shareUsage,
-        title: const Text('发送匿名使用统计（可选）'),
-        subtitle: const Text('用随机安装标识统计登录、功能使用、反馈送达和录播加载。不会发送账号或校园内容，可在设置中关闭。'),
-        onChanged: (value) => setState(() => _shareUsage = value == true),
-      ),
+      usageChoice: ServiceProvider.of(context).telemetry == null
+          ? null
+          : AdaptiveCheckboxRow(
+              title: '发送匿名使用统计（可选）',
+              subtitle: '用随机安装标识统计登录、功能使用、反馈送达和录播加载。不会发送账号或校园内容，可在设置中关闭。',
+              subtitleMaxLines: 4,
+              value: _shareUsage,
+              onChanged: (value) => setState(() => _shareUsage = value == true),
+            ),
     );
   }
 }
@@ -78,21 +83,17 @@ class PrivacyConsentPage extends StatelessWidget {
   /// go on, and let them change their mind.
   void _explainDecline(BuildContext context) {
     unawaited(
-      showDialog<void>(
+      showAdaptiveAlertDialog<void>(
         context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('需要你的同意'),
-          content: const Text(
-            '不同意隐私政策时，TechPie 无法连接校园服务，也就无法提供课表、作业和校园卡功能。'
+        title: '需要你的同意',
+        message: '不同意隐私政策时，TechPie 无法连接校园服务，也就无法提供课表、作业和校园卡功能。'
             '你仍然可以随时重新打开应用并选择同意。',
+        actions: const [
+          AdaptiveAlertAction<void>(
+            label: '知道了',
+            isDefault: true,
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('知道了'),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -104,6 +105,14 @@ class PrivacyConsentPage extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        TpBrandLockup(
+          key: const ValueKey('privacy.brand-lockup'),
+          markSize: compact ? 28 : 38,
+          markVariant: TpBrandMarkVariant.badge,
+          wordmarkSize: compact ? 17.5 : 22,
+          showSubtitle: false,
+        ),
+        SizedBox(height: compact ? 14 : 20),
         Text('隐私政策', style: theme.textTheme.titleLarge),
         const SizedBox(height: 12),
         Text(

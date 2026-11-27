@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_surface_bg"
+    android:clipToOutline="true"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <LinearLayout
+        android:id="@+id/overview_schedule_zone"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <ImageView android:layout_width="15dp" android:layout_height="15dp" android:importantForAccessibility="no" android:src="@drawable/ic_widget_schedule"/>
+            <TextView android:id="@+id/overview_schedule_title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:layout_weight="1" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1" android:text="@string/widget_schedule_today" android:textColor="@color/widget_brand_ink" android:textSize="13sp"/>
+        </LinearLayout>
+
+        <TextView android:id="@+id/overview_schedule_empty" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:gravity="center_vertical" android:text="@string/widget_schedule_no_more_classes" android:textColor="@color/widget_text_secondary" android:textSize="12sp" android:visibility="gone"/>
+
+        <LinearLayout android:id="@+id/overview_course_1" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7dp" android:gravity="center_vertical" android:orientation="horizontal">
+            <TextView android:id="@+id/overview_course_1_accent" android:layout_width="3dp" android:layout_height="24dp" android:background="@color/widget_brand_ink" android:importantForAccessibility="no"/>
+            <TextView android:id="@+id/overview_course_1_title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1" android:textColor="@color/widget_text_primary" android:textSize="13sp"/>
+            <TextView android:id="@+id/overview_course_1_meta" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:ellipsize="end" android:maxLines="1" android:textColor="@color/widget_text_secondary" android:textSize="11sp"/>
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/overview_course_2" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+            <TextView android:id="@+id/overview_course_2_accent" android:layout_width="3dp" android:layout_height="24dp" android:background="@color/widget_brand_ink" android:importantForAccessibility="no"/>
+            <TextView android:id="@+id/overview_course_2_title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1" android:textColor="@color/widget_text_primary" android:textSize="13sp"/>
+            <TextView android:id="@+id/overview_course_2_meta" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:ellipsize="end" android:maxLines="1" android:textColor="@color/widget_text_secondary" android:textSize="11sp"/>
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/overview_course_3" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+            <TextView android:id="@+id/overview_course_3_accent" android:layout_width="3dp" android:layout_height="24dp" android:background="@color/widget_brand_ink" android:importantForAccessibility="no"/>
+            <TextView android:id="@+id/overview_course_3_title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1" android:textColor="@color/widget_text_primary" android:textSize="13sp"/>
+            <TextView android:id="@+id/overview_course_3_meta" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:ellipsize="end" android:maxLines="1" android:textColor="@color/widget_text_secondary" android:textSize="11sp"/>
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
+        android:background="@color/widget_divider"
+        android:importantForAccessibility="no"/>
+
+    <LinearLayout
+        android:id="@+id/overview_deadline_zone"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+            <ImageView android:layout_width="15dp" android:layout_height="15dp" android:importantForAccessibility="no" android:src="@drawable/ic_widget_deadline"/>
+            <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="6dp" android:layout_weight="1" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1" android:text="@string/widget_deadline_title" android:textColor="@color/widget_brand_ink" android:textSize="13sp"/>
+            <TextView android:id="@+id/overview_deadline_badge" android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="@drawable/widget_pill_brand" android:fontFamily="monospace" android:maxLines="1" android:paddingStart="7dp" android:paddingTop="1dp" android:paddingEnd="7dp" android:paddingBottom="1dp" android:text="0" android:textColor="@color/widget_brand_ink" android:textSize="10sp" android:textStyle="bold"/>
+        </LinearLayout>
+
+        <TextView android:id="@+id/overview_deadline_empty" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:gravity="center_vertical" android:text="@string/widget_deadlines_empty" android:textColor="@color/widget_text_secondary" android:textSize="12sp" android:visibility="gone"/>
+
+        <LinearLayout android:id="@+id/overview_ddl_1" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="7dp" android:gravity="center_vertical" android:orientation="horizontal">
+            <TextView android:id="@+id/overview_ddl_1_bar" android:layout_width="3dp" android:layout_height="24dp" android:background="@color/widget_urgency_urgent" android:importantForAccessibility="no"/>
+            <TextView android:id="@+id/overview_ddl_1_title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1" android:textColor="@color/widget_text_primary" android:textSize="13sp"/>
+            <TextView android:id="@+id/overview_ddl_1_countdown" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:background="@drawable/widget_pill_brand" android:fontFamily="monospace" android:maxLines="1" android:paddingStart="7dp" android:paddingTop="2dp" android:paddingEnd="7dp" android:paddingBottom="2dp" android:textColor="@color/widget_brand_ink" android:textSize="11sp" android:textStyle="bold"/>
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/overview_ddl_2" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+            <TextView android:id="@+id/overview_ddl_2_bar" android:layout_width="3dp" android:layout_height="24dp" android:background="@color/widget_urgency_soon" android:importantForAccessibility="no"/>
+            <TextView android:id="@+id/overview_ddl_2_title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1" android:textColor="@color/widget_text_primary" android:textSize="13sp"/>
+            <TextView android:id="@+id/overview_ddl_2_countdown" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:background="@drawable/widget_pill_amber" android:fontFamily="monospace" android:maxLines="1" android:paddingStart="7dp" android:paddingTop="2dp" android:paddingEnd="7dp" android:paddingBottom="2dp" android:textColor="@color/widget_amber_ink" android:textSize="11sp" android:textStyle="bold"/>
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/overview_ddl_3" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:gravity="center_vertical" android:orientation="horizontal">
+            <TextView android:id="@+id/overview_ddl_3_bar" android:layout_width="3dp" android:layout_height="24dp" android:background="@color/widget_urgency_normal" android:importantForAccessibility="no"/>
+            <TextView android:id="@+id/overview_ddl_3_title" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:layout_weight="1" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:maxLines="1" android:textColor="@color/widget_text_primary" android:textSize="13sp"/>
+            <TextView android:id="@+id/overview_ddl_3_countdown" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp" android:background="@drawable/widget_pill_muted" android:fontFamily="monospace" android:maxLines="1" android:paddingStart="7dp" android:paddingTop="2dp" android:paddingEnd="7dp" android:paddingBottom="2dp" android:textColor="@color/widget_text_secondary" android:textSize="11sp" android:textStyle="bold"/>
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>
