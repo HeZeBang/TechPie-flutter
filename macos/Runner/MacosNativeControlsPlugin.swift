@@ -398,10 +398,6 @@ private final class _MacosSwitchView: _TechPieAppKitContainerView {
       } else {
         result(FlutterError(code: "bad_args", message: "Missing isDark", details: nil))
       }
-    case "setSemanticLabel":
-      let label = (call.arguments as? [String: Any])?["label"] as? String
-      control.setAccessibilityLabel((label?.isEmpty ?? true) ? nil : label)
-      result(nil)
     case "setInteractive":
       result(nil)
     default:
@@ -788,10 +784,6 @@ private final class _MacosPopUpButtonView: _TechPieAppKitContainerView {
       } else {
         result(FlutterError(code: "bad_args", message: "Missing isDark", details: nil))
       }
-    case "setSemanticLabel":
-      let label = (call.arguments as? [String: Any])?["label"] as? String
-      control.setAccessibilityLabel((label?.isEmpty ?? true) ? nil : label)
-      result(nil)
     case "setInteractive":
       result(nil)
     default:
@@ -959,10 +951,6 @@ private final class _MacosSliderView: _TechPieAppKitContainerView {
       } else {
         result(FlutterError(code: "bad_args", message: "Missing isDark", details: nil))
       }
-    case "setSemanticLabel":
-      let label = (call.arguments as? [String: Any])?["label"] as? String
-      control.setAccessibilityLabel((label?.isEmpty ?? true) ? nil : label)
-      result(nil)
     case "setInteractive":
       result(nil)
     default:
@@ -1081,10 +1069,6 @@ private final class _MacosCheckboxView: _TechPieAppKitContainerView {
       } else {
         result(FlutterError(code: "bad_args", message: "Missing isDark", details: nil))
       }
-    case "setSemanticLabel":
-      let label = (call.arguments as? [String: Any])?["label"] as? String
-      control.setAccessibilityLabel((label?.isEmpty ?? true) ? nil : label)
-      result(nil)
     case "setInteractive":
       result(nil)
     default:
