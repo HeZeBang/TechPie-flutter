@@ -42,7 +42,12 @@ class MainFlutterWindow: NSWindow {
     self.windowChromeChannel = chromeChannel
 
     RegisterGeneratedPlugins(registry: flutterViewController)
-    (NSApp.delegate as? AppDelegate)?.deadlineWidgetBridge.configure(messenger: flutterViewController.engine.binaryMessenger)
+    if let appDelegate = NSApp.delegate as? AppDelegate {
+      let messenger = flutterViewController.engine.binaryMessenger
+      appDelegate.deadlineWidgetBridge.configure(messenger: messenger)
+      appDelegate.homeWidgetsBridge.configure(messenger: messenger)
+      appDelegate.configureEcardDeepLink(messenger: messenger)
+    }
     deadlineReminderBridge.configure(messenger: flutterViewController.engine.binaryMessenger)
 
     super.awakeFromNib()

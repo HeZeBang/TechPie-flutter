@@ -9,7 +9,27 @@ struct DeadlineEntry: TimelineEntry {
 
 struct DeadlineProvider: TimelineProvider {
   func placeholder(in context: Context) -> DeadlineEntry {
-    DeadlineEntry(date: Date(), state: .notSynced)
+    let now = Date()
+    let sample = DeadlineSnapshot(
+      writtenAt: now.timeIntervalSince1970,
+      items: [
+        DeadlineItem(
+          id: "sample-1",
+          kind: .assignment,
+          title: WidgetL10n.string("deadline.widget.sampleTitle1"),
+          subtitle: "CS101",
+          dueAt: now.addingTimeInterval(5 * 3600).timeIntervalSince1970
+        ),
+        DeadlineItem(
+          id: "sample-2",
+          kind: .exam,
+          title: WidgetL10n.string("deadline.widget.sampleTitle2"),
+          subtitle: "SIST 1A-200",
+          dueAt: now.addingTimeInterval(32 * 3600).timeIntervalSince1970
+        ),
+      ]
+    )
+    return DeadlineEntry(date: now, state: .ready(sample))
   }
 
   func getSnapshot(in context: Context, completion: @escaping (DeadlineEntry) -> Void) {
@@ -21,8 +41,11 @@ struct DeadlineProvider: TimelineProvider {
     let now = Date()
     let state = read()
     let dates: [Date]
-    if case .ready(let snapshot) = state { dates = snapshot.timelineDates(after: now) }
-    else { dates = [now, now.addingTimeInterval(24 * 3600)] }
+    if case .ready(let snapshot) = state {
+      dates = snapshot.timelineDates(after: now)
+    } else {
+      dates = [now, now.addingTimeInterval(24 * 3600)]
+    }
     completion(Timeline(entries: dates.map { DeadlineEntry(date: $0, state: state) }, policy: .atEnd))
   }
 
@@ -33,12 +56,22 @@ struct DeadlineProvider: TimelineProvider {
 
 struct DeadlineWidget: Widget {
   static let kind = "DeadlineWidget"
+
   var body: some WidgetConfiguration {
     StaticConfiguration(kind: Self.kind, provider: DeadlineProvider()) { entry in
       DeadlineWidgetView(entry: entry)
     }
     .configurationDisplayName("deadline.widget.title")
     .description("deadline.widget.description")
-    .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    .supportedFamilies(supportedFamilies)
+  }
+
+  private var supportedFamilies: [WidgetFamily] {
+    #if os(iOS)
+    if #available(iOS 16.0, *) {
+      return [.systemSmall, .systemMedium, .systemLarge, .accessoryRectangular, .accessoryInline]
+    }
+    #endif
+    return [.systemSmall, .systemMedium, .systemLarge]
   }
 }

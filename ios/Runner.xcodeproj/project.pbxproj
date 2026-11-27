@@ -20,6 +20,14 @@
 		674C1E9FBF132F0F79A1B9EB /* EcardBindTunnelPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71A57A3E0C7844F433A2F16B /* EcardBindTunnelPlugin.swift */; };
 		6BFBE954DB868241E9E9810B /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 052EF181B45C1F8AB028A91F /* Pods_Runner.framework */; };
 		713F49B77717FAE6822B2F3C /* DeadlineWidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38716F6453DEE11F5FB03567 /* DeadlineWidgetBridge.swift */; };
+		TPW100000000000000000201 /* HomeWidgetsBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW100000000000000000101 /* HomeWidgetsBridge.swift */; };
+		TPW100000000000000000202 /* TechPieWidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW100000000000000000102 /* TechPieWidgetTheme.swift */; };
+		TPW100000000000000000203 /* WidgetAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW100000000000000000103 /* WidgetAppIntents.swift */; };
+		TPW100000000000000000204 /* EcardPayWidgetShared.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW100000000000000000104 /* EcardPayWidgetShared.swift */; };
+		TPW100000000000000000205 /* ScheduleWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW100000000000000000105 /* ScheduleWidget.swift */; };
+		TPW100000000000000000206 /* TodayOverviewWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW100000000000000000106 /* TodayOverviewWidget.swift */; };
+		TPW100000000000000000207 /* EcardPayControlWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = TPW100000000000000000107 /* EcardPayControlWidget.swift */; };
+		TPW100000000000000000208 /* card-bottom.png in Resources */ = {isa = PBXBuildFile; fileRef = TPW100000000000000000108 /* card-bottom.png */; };
 		A716AD2026B149D994791951 /* DeadlineReminderBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A716AD2026B149D994791952 /* DeadlineReminderBridge.swift */; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		75CE913AF0FADB4E2A1F4D42 /* WatchSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 5D3F4FB42B7E14FFEF02E328 /* WatchSupport */; };
@@ -128,6 +136,14 @@
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		38716F6453DEE11F5FB03567 /* DeadlineWidgetBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DeadlineWidgetBridge.swift; path = Bridge/DeadlineWidgetBridge.swift; sourceTree = "<group>"; };
+		TPW100000000000000000101 /* HomeWidgetsBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = HomeWidgetsBridge.swift; path = Bridge/HomeWidgetsBridge.swift; sourceTree = "<group>"; };
+		TPW100000000000000000102 /* TechPieWidgetTheme.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TechPieWidgetTheme.swift; path = UI/TechPieWidgetTheme.swift; sourceTree = "<group>"; };
+		TPW100000000000000000103 /* WidgetAppIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WidgetAppIntents.swift; path = UI/WidgetAppIntents.swift; sourceTree = "<group>"; };
+		TPW100000000000000000104 /* EcardPayWidgetShared.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EcardPayWidgetShared.swift; path = UI/EcardPayWidgetShared.swift; sourceTree = "<group>"; };
+		TPW100000000000000000105 /* ScheduleWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ScheduleWidget.swift; path = UI/ScheduleWidget.swift; sourceTree = "<group>"; };
+		TPW100000000000000000106 /* TodayOverviewWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = TodayOverviewWidget.swift; path = UI/TodayOverviewWidget.swift; sourceTree = "<group>"; };
+		TPW100000000000000000107 /* EcardPayControlWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = EcardPayControlWidget.swift; path = UI/EcardPayControlWidget.swift; sourceTree = "<group>"; };
+		TPW100000000000000000108 /* card-bottom.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = "card-bottom.png"; path = "../assets/campus_card/images/card-bottom.png"; sourceTree = SOURCE_ROOT; };
 		A716AD2026B149D994791952 /* DeadlineReminderBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeadlineReminderBridge.swift; path = ../apple/DeadlineReminders/DeadlineReminderBridge.swift; sourceTree = SOURCE_ROOT; };
 		3A18B1C545E34121D35EA8DC /* Watch.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; path = Watch.xcconfig; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
@@ -266,6 +282,13 @@
 			isa = PBXGroup;
 			children = (
 				38716F6453DEE11F5FB03567 /* DeadlineWidgetBridge.swift */,
+				TPW100000000000000000101 /* HomeWidgetsBridge.swift */,
+				TPW100000000000000000102 /* TechPieWidgetTheme.swift */,
+				TPW100000000000000000103 /* WidgetAppIntents.swift */,
+				TPW100000000000000000104 /* EcardPayWidgetShared.swift */,
+				TPW100000000000000000105 /* ScheduleWidget.swift */,
+				TPW100000000000000000106 /* TodayOverviewWidget.swift */,
+				TPW100000000000000000107 /* EcardPayControlWidget.swift */,
 				611E8A457024A3266D1976D9 /* DeadlineWidget.swift */,
 				C635101B162477AA28C2C4F5 /* DeadlineWidgetView.swift */,
 			);
@@ -390,6 +413,7 @@
 				ECAD00000000000000000001 /* EcardPayWidget.swift */,
 				ECAD00000000000000000002 /* Info.plist */,
 				ECAD00000000000000000021 /* widget-background.png */,
+				TPW100000000000000000108 /* card-bottom.png */,
 				ECAD00000000000000000022 /* Localizable.strings */,
 			);
 			path = EcardPayWidget;
@@ -613,6 +637,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				ECAD00000000000000000020 /* widget-background.png in Resources */,
+				TPW100000000000000000208 /* card-bottom.png in Resources */,
 				ECAD00000000000000000026 /* Localizable.strings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -745,6 +770,7 @@
 				8F7428AE32B6D2B9B94C07A2 /* WatchConnectivityBridge.swift in Sources */,
 				674C1E9FBF132F0F79A1B9EB /* EcardBindTunnelPlugin.swift in Sources */,
 				713F49B77717FAE6822B2F3C /* DeadlineWidgetBridge.swift in Sources */,
+				TPW100000000000000000201 /* HomeWidgetsBridge.swift in Sources */,
 				A716AD2026B149D994791951 /* DeadlineReminderBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -754,6 +780,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				ECAD00000000000000000004 /* EcardPayWidget.swift in Sources */,
+				TPW100000000000000000202 /* TechPieWidgetTheme.swift in Sources */,
+				TPW100000000000000000203 /* WidgetAppIntents.swift in Sources */,
+				TPW100000000000000000204 /* EcardPayWidgetShared.swift in Sources */,
+				TPW100000000000000000205 /* ScheduleWidget.swift in Sources */,
+				TPW100000000000000000206 /* TodayOverviewWidget.swift in Sources */,
+				TPW100000000000000000207 /* EcardPayControlWidget.swift in Sources */,
 				854FCED35C013603DF29BFBD /* DeadlineWidget.swift in Sources */,
 				5A4EAACD9E8E0BA6FB2B310F /* DeadlineWidgetView.swift in Sources */,
 			);
