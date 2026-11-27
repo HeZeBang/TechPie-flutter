@@ -122,10 +122,17 @@ void main() {
           MaterialApp(
             theme: themeService.lightTheme,
             home: const Scaffold(
-              body: TpBrandLockup(
-                axis: Axis.horizontal,
-                subtitlePrefix: 'DESIGNED BY GEEKPIE',
-                subtitleAccentSuffix: '_',
+              body: Column(
+                children: [
+                  TpBrandLockup(
+                    axis: Axis.horizontal,
+                    showSubtitle: true,
+                  ),
+                  TpBrandSubtitle(
+                    prefix: 'GeekPie',
+                    accentSuffix: '_',
+                  ),
+                ],
               ),
             ),
           ),
@@ -156,24 +163,34 @@ void main() {
         }
 
         final lightTp = TpColors.fromTheme(themeService.lightTheme);
-        final wordmarkRich = tester.widget<RichText>(
+        final wordmarkText = tester.widget<Text>(
           find.descendant(
             of: find.byType(TpBrandWordmark),
-            matching: find.byType(RichText),
+            matching: find.byType(Text),
           ),
         );
-        final pieStyle = findResolvedStyle(wordmarkRich.text, 'Pie');
-        expect(pieStyle?.color, lightTp.textPrimary);
-        expect(pieStyle?.color, isNot(TpTokens.iosBlueLight));
+        expect(wordmarkText.style?.color, lightTp.textPrimary);
+        expect(wordmarkText.style?.color, isNot(TpTokens.iosBlueLight));
 
-        final lightSubRich = tester.widget<RichText>(
+        final lightDefaultSub = tester.widget<Text>(
           find.descendant(
-            of: find.byType(TpBrandSubtitle),
+            of: find.descendant(
+              of: find.byType(TpBrandLockup),
+              matching: find.byType(TpBrandSubtitle),
+            ),
+            matching: find.byType(Text),
+          ),
+        );
+        expect(lightDefaultSub.style?.color, lightTp.textMuted);
+
+        final lightAccentRich = tester.widget<RichText>(
+          find.descendant(
+            of: find.byType(TpBrandSubtitle).last,
             matching: find.byType(RichText),
           ),
         );
         expect(
-          findResolvedStyle(lightSubRich.text, '_')?.color,
+          findResolvedStyle(lightAccentRich.text, '_')?.color,
           TpTokens.techRedLight,
         );
 
@@ -181,34 +198,51 @@ void main() {
           MaterialApp(
             theme: themeService.darkTheme,
             home: const Scaffold(
-              body: TpBrandLockup(
-                axis: Axis.vertical,
-                subtitlePrefix: 'DESIGNED BY GEEKPIE',
-                subtitleAccentSuffix: '_',
+              body: Column(
+                children: [
+                  TpBrandLockup(
+                    axis: Axis.vertical,
+                    showSubtitle: true,
+                  ),
+                  TpBrandSubtitle(
+                    prefix: 'GeekPie',
+                    accentSuffix: '_',
+                  ),
+                ],
               ),
             ),
           ),
         );
         await tester.pumpAndSettle();
         final darkTp = TpColors.fromTheme(themeService.darkTheme);
-        final darkWordmark = tester.widget<RichText>(
+        final darkWordmarkText = tester.widget<Text>(
           find.descendant(
             of: find.byType(TpBrandWordmark),
-            matching: find.byType(RichText),
+            matching: find.byType(Text),
           ),
         );
-        final darkPieStyle = findResolvedStyle(darkWordmark.text, 'Pie');
-        expect(darkPieStyle?.color, darkTp.textPrimary);
-        expect(darkPieStyle?.color, isNot(TpTokens.iosBlueDark));
+        expect(darkWordmarkText.style?.color, darkTp.textPrimary);
+        expect(darkWordmarkText.style?.color, isNot(TpTokens.iosBlueDark));
 
-        final darkSubRich = tester.widget<RichText>(
+        final darkDefaultSub = tester.widget<Text>(
           find.descendant(
-            of: find.byType(TpBrandSubtitle),
+            of: find.descendant(
+              of: find.byType(TpBrandLockup),
+              matching: find.byType(TpBrandSubtitle),
+            ),
+            matching: find.byType(Text),
+          ),
+        );
+        expect(darkDefaultSub.style?.color, darkTp.textMuted);
+
+        final darkAccentRich = tester.widget<RichText>(
+          find.descendant(
+            of: find.byType(TpBrandSubtitle).last,
             matching: find.byType(RichText),
           ),
         );
         expect(
-          findResolvedStyle(darkSubRich.text, '_')?.color,
+          findResolvedStyle(darkAccentRich.text, '_')?.color,
           TpTokens.techRedDarkInk,
         );
       } finally {
@@ -217,7 +251,7 @@ void main() {
     },
   );
 
-  testWidgets('TpBrandLockup renders TechPie and SHANGHAITECH / GEEKPIE subtitles cleanly', (
+  testWidgets('TpBrandLockup renders TechPie and quiet ShanghaiTech · GeekPie caption cleanly', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -228,8 +262,7 @@ void main() {
               TpBrandLockup(),
               TpBrandLockup(
                 axis: Axis.vertical,
-                subtitlePrefix: 'DESIGNED BY GEEKPIE',
-                subtitleAccentSuffix: '_',
+                showSubtitle: true,
               ),
             ],
           ),
@@ -238,11 +271,10 @@ void main() {
     );
 
     expect(find.text('TechPie'), findsNWidgets(2));
-    expect(find.text('SHANGHAITECH'), findsOneWidget);
-    expect(find.text('DESIGNED BY GEEKPIE_'), findsOneWidget);
+    expect(find.text('ShanghaiTech · GeekPie'), findsOneWidget);
   });
 
-  testWidgets('PrivacyConsentPage shows brand lockup in both full and compact modes', (
+  testWidgets('PrivacyConsentPage shows flat TechRed badge brand lockup in both full and compact modes', (
     tester,
   ) async {
     for (final compact in [false, true]) {
@@ -255,12 +287,13 @@ void main() {
         ),
       );
       expect(find.byKey(const ValueKey('privacy.brand-lockup')), findsOneWidget);
-      expect(find.byType(TpBrandMark), findsOneWidget);
+      final mark = tester.widget<TpBrandMark>(find.byType(TpBrandMark));
+      expect(mark.variant, TpBrandMarkVariant.badge);
       expect(find.text('TechPie'), findsOneWidget);
     }
   });
 
-  testWidgets('HomePage shows lightweight top brand bar on mobile and omits it inside DesktopShell', (
+  testWidgets('HomePage shows compact eyebrow brand mark on mobile and omits it inside DesktopShell', (
     tester,
   ) async {
     try {
@@ -281,7 +314,10 @@ void main() {
         ),
         findsOneWidget,
       );
-      expect(find.byKey(const ValueKey('home.avatar')), findsOneWidget);
+      final avatar = tester.widget<TpAvatarBadge>(
+        find.byKey(const ValueKey('home.avatar')),
+      );
+      expect(avatar.tone, TpAvatarBadgeTone.brandSoft);
 
       debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
       tester.view.physicalSize = const Size(1280, 800);

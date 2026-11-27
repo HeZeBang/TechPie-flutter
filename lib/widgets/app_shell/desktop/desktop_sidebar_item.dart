@@ -26,15 +26,9 @@ class DesktopSidebarItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    final foreground = selected ? colors.textPrimary : colors.textSecondary;
+    final foreground = selected ? colors.brandInk : colors.textSecondary;
     final iconColor = selected ? colors.brandInk : colors.textMuted;
     final radius = BorderRadius.circular(TpTokens.radiusS);
-    final pillFill = colors.isDark
-        ? Colors.white.withValues(alpha: 0.085)
-        : colors.surface;
-    final pillBorder = colors.isDark
-        ? Colors.white.withValues(alpha: 0.11)
-        : const Color(0x10000000);
     final showOwnSelectionSurface = selected && !usesSlidingIndicator;
 
     return LayoutBuilder(
@@ -55,7 +49,7 @@ class DesktopSidebarItem extends StatelessWidget {
         );
         final iconWidget = Icon(
           selected ? destination.selectedIcon : destination.icon,
-          size: 19,
+          size: 18.5,
           color: iconColor,
         );
         final item = Semantics(
@@ -68,13 +62,10 @@ class DesktopSidebarItem extends StatelessWidget {
                 : MaterialType.canvas,
             color: usesSlidingIndicator
                 ? null
-                : (showOwnSelectionSurface ? pillFill : Colors.transparent),
-            shape: RoundedRectangleBorder(
-              borderRadius: radius,
-              side: showOwnSelectionSurface
-                  ? BorderSide(color: pillBorder, width: 0.75)
-                  : BorderSide.none,
-            ),
+                : (showOwnSelectionSurface
+                    ? colors.brandSoft
+                    : Colors.transparent),
+            shape: RoundedRectangleBorder(borderRadius: radius),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: onTap,
@@ -89,7 +80,9 @@ class DesktopSidebarItem extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     SizedBox(
-                      width: DesktopSidebarTokens.iconColumnWidth,
+                      width: canShowLabel
+                          ? DesktopSidebarTokens.iconColumnWidth
+                          : constraints.maxWidth,
                       child: Center(
                         child: !canShowLabel && activeBadge != null
                             ? Stack(

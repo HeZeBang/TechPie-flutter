@@ -670,7 +670,10 @@ class _SettingsBodyState extends State<_SettingsBody> {
                 children: [
                   Row(
                     children: [
-                      const TpBrandMark(size: 46),
+                      const TpBrandMark(
+                        size: 40,
+                        variant: TpBrandMarkVariant.badge,
+                      ),
                       const SizedBox(width: TpTokens.space3),
                       Expanded(
                         child: Column(
@@ -1301,12 +1304,13 @@ class _SettingsBrandFooter extends StatelessWidget {
       key: ValueKey('settings.brand-footer'),
       padding: EdgeInsets.only(top: TpTokens.space2, bottom: TpTokens.space4),
       child: TpBrandLockup(
-        markSize: 34,
-        wordmarkSize: 16,
-        subtitleSize: 10,
+        markSize: 22,
+        wordmarkSize: 15,
+        subtitleSize: 11.5,
         axis: Axis.vertical,
-        subtitlePrefix: 'SHANGHAITECH · GEEKPIE',
-        subtitleAccentSuffix: '_',
+        showSubtitle: true,
+        subtitlePrefix: 'ShanghaiTech · GeekPie',
+        subtitleAccentSuffix: '',
       ),
     );
   }

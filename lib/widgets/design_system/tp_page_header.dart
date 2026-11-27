@@ -12,6 +12,7 @@ class TpPageHeader extends StatelessWidget {
     super.key,
     required this.title,
     this.subtitle,
+    this.subtitleWidget,
     this.trailing,
     this.padding = const EdgeInsets.only(
       top: TpTokens.space1,
@@ -21,6 +22,7 @@ class TpPageHeader extends StatelessWidget {
 
   final String title;
   final String? subtitle;
+  final Widget? subtitleWidget;
   final Widget? trailing;
   final EdgeInsetsGeometry padding;
 
@@ -37,7 +39,10 @@ class TpPageHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (subtitle != null && subtitle!.isNotEmpty) ...[
+                if (subtitleWidget != null) ...[
+                  subtitleWidget!,
+                  const SizedBox(height: 3),
+                ] else if (subtitle != null && subtitle!.isNotEmpty) ...[
                   Text(
                     subtitle!,
                     style: TpTypography.pageSubtitle(colors),
@@ -66,7 +71,7 @@ class TpPageHeader extends StatelessWidget {
 }
 
 /// Visual tone for [TpAvatarBadge].
-enum TpAvatarBadgeTone { neutral, brand }
+enum TpAvatarBadgeTone { brandSoft, neutral, brand }
 
 /// Circular tactile avatar pill used in page headers.
 class TpAvatarBadge extends StatelessWidget {
@@ -75,8 +80,8 @@ class TpAvatarBadge extends StatelessWidget {
     required this.text,
     this.onTap,
     this.tooltip,
-    this.size = 38,
-    this.tone = TpAvatarBadgeTone.neutral,
+    this.size = 36,
+    this.tone = TpAvatarBadgeTone.brandSoft,
   });
 
   final String text;
@@ -88,17 +93,11 @@ class TpAvatarBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    final isBrand = tone == TpAvatarBadgeTone.brand;
-    final fillColor = isBrand
-        ? colors.brand
-        : (colors.isDark ? colors.surfaceSubtle : colors.surface);
-    final labelColor = isBrand ? colors.onBrand : colors.textPrimary;
-    final borderSide = isBrand
-        ? BorderSide.none
-        : BorderSide(
-            color: colors.isDark ? colors.border : colors.divider,
-            width: 0.75,
-          );
+    final (fillColor, labelColor) = switch (tone) {
+      TpAvatarBadgeTone.brandSoft => (colors.brandSoft, colors.brandInk),
+      TpAvatarBadgeTone.neutral => (colors.surfaceSubtle, colors.textPrimary),
+      TpAvatarBadgeTone.brand => (colors.brand, colors.onBrand),
+    };
 
     final content = SizedBox(
       width: size,
@@ -118,37 +117,22 @@ class TpAvatarBadge extends StatelessWidget {
       ),
     );
 
-    final material = Material(
+    final badge = Material(
       color: fillColor,
-      shape: CircleBorder(side: borderSide),
+      shape: const CircleBorder(),
       clipBehavior: Clip.antiAlias,
       child: onTap == null
           ? content
           : TpTapSurface(
               style: TpTapFeedbackStyle.button,
               customBorder: const CircleBorder(),
-              pressedColor: isBrand ? colors.onBrand : null,
+              pressedColor:
+                  tone == TpAvatarBadgeTone.brand ? colors.onBrand : null,
               enablePressScale: false,
               onTap: onTap,
               child: content,
             ),
     );
-
-    final badge = (!isBrand && !colors.isDark)
-        ? DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: material,
-          )
-        : material;
 
     final interactiveBadge = onTap == null
         ? badge

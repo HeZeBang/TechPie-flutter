@@ -14,6 +14,8 @@ class TpProgressRow extends StatelessWidget {
     required this.trailingLabel,
     required this.progress,
     required this.color,
+    this.trailingColor,
+    this.highlightTrailing = false,
     this.subtitle,
     this.onTap,
     this.showDivider = false,
@@ -27,6 +29,8 @@ class TpProgressRow extends StatelessWidget {
   final String trailingLabel;
   final double progress;
   final Color color;
+  final Color? trailingColor;
+  final bool highlightTrailing;
   final String? subtitle;
   final VoidCallback? onTap;
   final bool showDivider;
@@ -36,6 +40,27 @@ class TpProgressRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final clamped = progress.clamp(0.05, 1.0);
+    final resolvedTrailingColor = trailingColor ?? color;
+    final Widget trailing = highlightTrailing
+        ? Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+            decoration: BoxDecoration(
+              color: resolvedTrailingColor.withValues(
+                alpha: colors.isDark ? 0.16 : 0.10,
+              ),
+              borderRadius: BorderRadius.circular(TpTokens.radiusPill),
+            ),
+            child: Text(
+              trailingLabel,
+              style: TpTypography.badge(resolvedTrailingColor),
+              maxLines: 1,
+            ),
+          )
+        : Text(
+            trailingLabel,
+            style: TpTypography.badge(resolvedTrailingColor),
+            maxLines: 1,
+          );
 
     final body = Padding(
       padding: padding,
@@ -54,18 +79,7 @@ class TpProgressRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: TpTokens.space2),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: colors.isDark ? 0.16 : 0.09),
-                  borderRadius: BorderRadius.circular(TpTokens.radiusPill),
-                ),
-                child: Text(
-                  trailingLabel,
-                  style: TpTypography.badge(color),
-                  maxLines: 1,
-                ),
-              ),
+              trailing,
             ],
           ),
           if (subtitle != null && subtitle!.isNotEmpty) ...[
@@ -106,7 +120,7 @@ class TpProgressRow extends StatelessWidget {
   }
 }
 
-/// Reusable thin rounded progress bar (4dp height, subtle neutral track).
+/// Reusable thin rounded progress bar (3dp height, subtle neutral track).
 class TpProgressBar extends StatelessWidget {
   const TpProgressBar({
     super.key,
@@ -127,15 +141,13 @@ class TpProgressBar extends StatelessWidget {
       borderRadius: radius,
       child: Container(
         height: height,
-        color: colors.textPrimary.withValues(alpha: colors.isDark ? 0.08 : 0.06),
+        color: colors.surfaceSubtle,
         alignment: Alignment.centerLeft,
         child: FractionallySizedBox(
           widthFactor: progress.clamp(0.0, 1.0),
           child: Container(
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [color.withValues(alpha: 0.82), color],
-              ),
+              color: color,
               borderRadius: radius,
             ),
           ),

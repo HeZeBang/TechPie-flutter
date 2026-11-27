@@ -8,25 +8,23 @@ import '../../theme/tp_typography.dart';
 
 /// Visual presentation of the faceted geometric TechPie "P" mark.
 enum TpBrandMarkVariant {
-  /// Sculpted Porcelain (Light) / Obsidian (Dark) squircle jewel carrying
-  /// the high-contrast 3D ruby prism "P".
-  badge,
-
-  /// Standalone faceted Ruby-Crimson "P" silhouette without the squircle plate.
+  /// Standalone bare faceted TechRed "P" mark directly on the surface.
   glyph,
+
+  /// Flat solid TechRed squircle containing a white faceted "P" mark.
+  badge,
 }
 
 /// Official pure-vector TechPie faceted "P" brand mark.
 ///
-/// Renders a Porcelain-White (Light) or Machined-Obsidian (Dark/AMOLED)
-/// squircle plate framing the sculpted 15-facet Ruby Prism "P", keeping
-/// TechPie's classic crimson prism unmistakable regardless of system accent.
+/// Renders cleanly without decorative shadows or glow boxes, keeping TechPie's
+/// signature TechRed geometric mark unmistakable regardless of system accent.
 class TpBrandMark extends StatelessWidget {
   const TpBrandMark({
     super.key,
     this.size = 36,
-    this.variant = TpBrandMarkVariant.badge,
-    this.showShadow = true,
+    this.variant = TpBrandMarkVariant.glyph,
+    this.showShadow = false,
     this.semanticLabel,
   });
 
@@ -39,112 +37,35 @@ class TpBrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.tpColors;
-    final isDark = colors.isDark;
+    final isDark = context.tpColors.isDark;
 
     final Widget mark;
     if (variant == TpBrandMarkVariant.glyph) {
       mark = SizedBox.square(
         dimension: size,
         child: CustomPaint(
-          painter: _FacetedPBrandPainter(onBadge: false, isDark: isDark),
+          painter: _FacetedPBrandPainter(
+            whiteMonochrome: false,
+            onBadge: false,
+            isDark: isDark,
+          ),
         ),
       );
     } else {
-      final radius = BorderRadius.circular(size * 0.25);
-      final plateColors = isDark
-          ? const [Color(0xFF242429), Color(0xFF16161A), Color(0xFF0E0E11)]
-          : const [Color(0xFFFFFFFF), Color(0xFFF4F4F6)];
-      final plateBorder = isDark
-          ? Colors.white.withValues(alpha: 0.14)
-          : const Color(0x16000000);
-
+      final badgeColor =
+          isDark ? const Color(0xFFD62839) : TpTokens.techRedLight;
       mark = Container(
         width: size,
         height: size,
         decoration: BoxDecoration(
-          borderRadius: radius,
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: plateColors,
-            stops: isDark ? const [0.0, 0.55, 1.0] : const [0.0, 1.0],
-          ),
-          boxShadow: showShadow && size >= 20
-              ? (isDark
-                  ? [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.48),
-                        blurRadius: size * 0.28,
-                        offset: Offset(0, size * 0.10),
-                      ),
-                      BoxShadow(
-                        color: TpTokens.techRedDark.withValues(alpha: 0.16),
-                        blurRadius: size * 0.30,
-                        offset: Offset(0, size * 0.08),
-                      ),
-                    ]
-                  : [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.08),
-                        blurRadius: size * 0.24,
-                        offset: Offset(0, size * 0.08),
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.05),
-                        blurRadius: size * 0.06,
-                        offset: Offset(0, size * 0.02),
-                      ),
-                      BoxShadow(
-                        color: TpTokens.techRedLight.withValues(alpha: 0.08),
-                        blurRadius: size * 0.28,
-                        offset: Offset(0, size * 0.10),
-                      ),
-                    ])
-              : null,
+          color: badgeColor,
+          borderRadius: BorderRadius.circular(size * 0.24),
         ),
-        child: ClipRRect(
-          borderRadius: radius,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (isDark)
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: const Alignment(0.05, -0.05),
-                      radius: 0.78,
-                      colors: [
-                        const Color(0xFFE03140).withValues(alpha: 0.24),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.center,
-                    colors: [
-                      Colors.white.withValues(alpha: isDark ? 0.11 : 0.65),
-                      Colors.transparent,
-                    ],
-                  ),
-                ),
-              ),
-              CustomPaint(
-                painter: _FacetedPBrandPainter(onBadge: true, isDark: isDark),
-              ),
-              IgnorePointer(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: radius,
-                    border: Border.all(color: plateBorder, width: 0.75),
-                  ),
-                ),
-              ),
-            ],
+        child: CustomPaint(
+          painter: _FacetedPBrandPainter(
+            whiteMonochrome: true,
+            onBadge: true,
+            isDark: isDark,
           ),
         ),
       );
@@ -159,7 +80,7 @@ class TpBrandMark extends StatelessWidget {
   }
 }
 
-/// Editorial tight-tracked monochrome TechPie wordmark (`Tech` w600 + `Pie` w800).
+/// Clean monochrome TechPie wordmark.
 class TpBrandWordmark extends StatelessWidget {
   const TpBrandWordmark({
     super.key,
@@ -173,41 +94,28 @@ class TpBrandWordmark extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    final baseStyle = TpTypography.cardTitle(colors).copyWith(
-      fontSize: fontSize,
-      fontWeight: FontWeight.w800,
-      height: 1.08,
-      letterSpacing: fontSize >= 20 ? -0.65 : -0.45,
-      color: colors.textPrimary,
-    );
-
-    return Text.rich(
-      TextSpan(
-        style: baseStyle,
-        children: [
-          TextSpan(
-            text: 'Tech',
-            style: baseStyle.copyWith(
-              fontWeight: FontWeight.w600,
-              color: colors.textPrimary.withValues(alpha: 0.90),
-            ),
-          ),
-          const TextSpan(text: 'Pie'),
-        ],
-      ),
+    return Text(
+      'TechPie',
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
       textAlign: textAlign,
+      style: TpTypography.cardTitle(colors).copyWith(
+        fontSize: fontSize,
+        fontWeight: FontWeight.w700,
+        height: 1.1,
+        letterSpacing: fontSize >= 20 ? -0.5 : -0.35,
+        color: colors.textPrimary,
+      ),
     );
   }
 }
 
-/// Micro-caps institution/credit subtitle with optional TechRed terminal accent.
+/// Quiet secondary institution/credit caption with optional terminal accent.
 class TpBrandSubtitle extends StatelessWidget {
   const TpBrandSubtitle({
     super.key,
-    this.fontSize = 9.5,
-    this.prefix = 'SHANGHAITECH',
+    this.fontSize = 11.5,
+    this.prefix = 'ShanghaiTech · GeekPie',
     this.accentSuffix = '',
     this.textAlign = TextAlign.start,
   });
@@ -220,29 +128,38 @@ class TpBrandSubtitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.tpColors;
-    final accentColor =
-        colors.isDark ? TpTokens.techRedDarkInk : TpTokens.techRedLight;
     final baseStyle = TpTypography.cardMeta(colors).copyWith(
       fontSize: fontSize,
-      fontWeight: FontWeight.w600,
-      letterSpacing: 1.35,
-      height: 1.15,
-      color: colors.textMuted.withValues(alpha: 0.85),
+      fontWeight: FontWeight.w400,
+      letterSpacing: 0.1,
+      height: 1.25,
+      color: colors.textMuted,
     );
 
+    if (accentSuffix.isEmpty) {
+      return Text(
+        prefix,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: textAlign,
+        style: baseStyle,
+      );
+    }
+
+    final accentColor =
+        colors.isDark ? TpTokens.techRedDarkInk : TpTokens.techRedLight;
     return Text.rich(
       TextSpan(
         style: baseStyle,
         children: [
           TextSpan(text: prefix),
-          if (accentSuffix.isNotEmpty)
-            TextSpan(
-              text: accentSuffix,
-              style: baseStyle.copyWith(
-                color: accentColor,
-                fontWeight: FontWeight.w700,
-              ),
+          TextSpan(
+            text: accentSuffix,
+            style: baseStyle.copyWith(
+              color: accentColor,
+              fontWeight: FontWeight.w600,
             ),
+          ),
         ],
       ),
       maxLines: 1,
@@ -252,22 +169,24 @@ class TpBrandSubtitle extends StatelessWidget {
   }
 }
 
-/// Complete TechPie brand lockup pairing [TpBrandMark], [TpBrandWordmark],
-/// and an optional [TpBrandSubtitle].
+/// TechPie brand lockup pairing [TpBrandMark], [TpBrandWordmark], and an
+/// optional quiet [TpBrandSubtitle].
 class TpBrandLockup extends StatelessWidget {
   const TpBrandLockup({
     super.key,
-    this.markSize = 34,
-    this.wordmarkSize = 17,
-    this.subtitleSize = 9.5,
-    this.showSubtitle = true,
-    this.subtitlePrefix = 'SHANGHAITECH',
+    this.markSize = 24,
+    this.markVariant = TpBrandMarkVariant.glyph,
+    this.wordmarkSize = 16.5,
+    this.subtitleSize = 11.5,
+    this.showSubtitle = false,
+    this.subtitlePrefix = 'ShanghaiTech · GeekPie',
     this.subtitleAccentSuffix = '',
     this.axis = Axis.horizontal,
     this.gap,
   });
 
   final double markSize;
+  final TpBrandMarkVariant markVariant;
   final double wordmarkSize;
   final double subtitleSize;
   final bool showSubtitle;
@@ -278,14 +197,14 @@ class TpBrandLockup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolvedGap = gap ?? 10.0;
+    final resolvedGap = gap ?? 8.0;
 
     if (axis == Axis.vertical) {
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          TpBrandMark(size: markSize),
+          TpBrandMark(size: markSize, variant: markVariant),
           SizedBox(height: resolvedGap),
           TpBrandWordmark(
             fontSize: wordmarkSize,
@@ -308,7 +227,7 @@ class TpBrandLockup extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        TpBrandMark(size: markSize),
+        TpBrandMark(size: markSize, variant: markVariant),
         SizedBox(width: resolvedGap),
         Flexible(
           child: Column(
@@ -334,10 +253,12 @@ class TpBrandLockup extends StatelessWidget {
 
 class _FacetedPBrandPainter extends CustomPainter {
   const _FacetedPBrandPainter({
+    required this.whiteMonochrome,
     required this.onBadge,
     required this.isDark,
   });
 
+  final bool whiteMonochrome;
   final bool onBadge;
   final bool isDark;
 
@@ -370,42 +291,51 @@ class _FacetedPBrandPainter extends CustomPainter {
     ((0, 5), (0, 7), (1, 6), 5), // lower stem
     ((1, 6), (1, 8), (0, 7), 4), // ankle stem
     ((0, 7), (0, 9), (1, 8), 5), // bottom foot
-    ((1, 0), (1, 2), (2, 1), 0), // bowl top-left highlight
+    ((1, 0), (1, 2), (2, 1), 0), // bowl top-left face
     ((2, 1), (2, 3), (1, 2), 1), // bowl upper inner slope
-    ((2, 1), (2, 3), (3, 2), 0), // bowl top-right peak highlight
+    ((2, 1), (2, 3), (3, 2), 0), // bowl top-right outer face
     ((3, 2), (3, 4), (2, 3), 1), // bowl outer right face
     ((2, 3), (2, 5), (3, 4), 2), // bowl lower right
     ((2, 3), (2, 5), (1, 4), 3), // bowl lower inner slope
     ((1, 4), (1, 6), (2, 5), 4), // bowl underside junction
   ];
 
-  static const List<Color> _lightRubyPrism = [
-    Color(0xFFF45C69),
-    Color(0xFFE03242),
-    Color(0xFFC81A2B),
-    Color(0xFFA80D1D),
-    Color(0xFF830714),
-    Color(0xFF5D040E),
+  static const List<Color> _lightTechRedFacets = [
+    Color(0xFFCF2A39),
+    Color(0xFFB91827),
+    Color(0xFFA30B19),
+    Color(0xFF8D0815),
+    Color(0xFF760611),
+    Color(0xFF5E040C),
   ];
 
-  static const List<Color> _darkRubyPrism = [
-    Color(0xFFFF8892),
-    Color(0xFFFF5E6C),
-    Color(0xFFEA3546),
-    Color(0xFFCC1B2B),
-    Color(0xFFA81020),
-    Color(0xFF820A18),
+  static const List<Color> _darkTechRedFacets = [
+    Color(0xFFFF737E),
+    Color(0xFFF24C5A),
+    Color(0xFFE03140),
+    Color(0xFFC41E2D),
+    Color(0xFFA41220),
+    Color(0xFF820B17),
+  ];
+
+  static const List<Color> _whiteFacets = [
+    Color.fromRGBO(255, 255, 255, 1.0),
+    Color.fromRGBO(255, 255, 255, 0.92),
+    Color.fromRGBO(255, 255, 255, 0.85),
+    Color.fromRGBO(255, 255, 255, 0.78),
+    Color.fromRGBO(255, 255, 255, 0.70),
+    Color.fromRGBO(255, 255, 255, 0.62),
   ];
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
 
-    final glyphH = size.height * (onBadge ? 0.68 : 0.92);
+    final glyphH = size.height * (onBadge ? 0.66 : 0.94);
     final unit = glyphH / (9 * _dy);
     final glyphW = 3 * _dx * unit;
     final originX =
-        (size.width - glyphW) / 2 + (onBadge ? size.width * 0.025 : 0.0);
+        (size.width - glyphW) / 2 + (onBadge ? size.width * 0.02 : 0.0);
     final originY = (size.height - glyphH) / 2;
 
     Offset pt((int, int) cell) => Offset(
@@ -426,21 +356,9 @@ class _FacetedPBrandPainter extends CustomPainter {
       holePath,
     );
 
-    if (onBadge) {
-      final shadowPaint = Paint()
-        ..color = (isDark ? Colors.black : const Color(0xFF5D040E))
-            .withValues(alpha: isDark ? 0.45 : 0.16)
-        ..maskFilter = MaskFilter.blur(
-          BlurStyle.normal,
-          math.max(isDark ? 1.0 : 0.9, size.height * (isDark ? 0.04 : 0.036)),
-        );
-      canvas.save();
-      canvas.translate(0, size.height * (isDark ? 0.028 : 0.025));
-      canvas.drawPath(silhouette, shadowPaint);
-      canvas.restore();
-    }
-
-    final palette = isDark ? _darkRubyPrism : _lightRubyPrism;
+    final palette = whiteMonochrome
+        ? _whiteFacets
+        : (isDark ? _darkTechRedFacets : _lightTechRedFacets);
     final fillPaint = Paint()..style = PaintingStyle.fill;
     final seamPaint = Paint()
       ..style = PaintingStyle.stroke
@@ -458,20 +376,6 @@ class _FacetedPBrandPainter extends CustomPainter {
       canvas.drawPath(tri, fillPaint);
       canvas.drawPath(tri, seamPaint);
     }
-
-    final catchlightPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..strokeWidth = math.max(0.55, size.height * 0.017)
-      ..color = Colors.white.withValues(alpha: isDark ? 0.36 : 0.28);
-    final ridgePath = Path()
-      ..moveTo(pt((1, 0)).dx, pt((1, 0)).dy)
-      ..lineTo(pt((2, 1)).dx, pt((2, 1)).dy)
-      ..lineTo(pt((3, 2)).dx, pt((3, 2)).dy)
-      ..moveTo(pt((2, 1)).dx, pt((2, 1)).dy)
-      ..lineTo(pt((2, 3)).dx, pt((2, 3)).dy);
-    canvas.drawPath(ridgePath, catchlightPaint);
     canvas.restore();
   }
 
@@ -520,5 +424,7 @@ class _FacetedPBrandPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _FacetedPBrandPainter oldDelegate) =>
-      oldDelegate.onBadge != onBadge || oldDelegate.isDark != isDark;
+      oldDelegate.whiteMonochrome != whiteMonochrome ||
+      oldDelegate.onBadge != onBadge ||
+      oldDelegate.isDark != isDark;
 }

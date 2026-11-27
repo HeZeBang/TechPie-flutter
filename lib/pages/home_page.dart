@@ -683,23 +683,44 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final showHeaderAvatar = !(usesDesktopSidebarShell(context) &&
         context.findAncestorWidgetOfExactType<DesktopShell>() != null);
 
-    final mobileBrandBar = showHeaderAvatar
-        ? Padding(
-            key: const ValueKey('home.brand-bar'),
-            padding: const EdgeInsets.only(bottom: TpTokens.space2),
-            child: Row(
+    final header = TpPageHeader(
+      key: const ValueKey('home.greeting-header'),
+      subtitle: dateSubtitle,
+      subtitleWidget: showHeaderAvatar
+          ? Row(
+              key: const ValueKey('home.brand-bar'),
               children: [
-                const TpBrandLockup(
-                  markSize: 26,
-                  wordmarkSize: 17.5,
-                  showSubtitle: false,
-                ),
-                const Spacer(),
-                if (!_isEditing) ...[
-                  _HomeHeaderEditButton(
-                    key: const ValueKey('home.edit-toggle'),
-                    onPressed: () => _enterEditMode(isBento),
+                const TpBrandMark(size: 14),
+                const SizedBox(width: 5),
+                Text(
+                  'TechPie',
+                  style: TpTypography.pageSubtitle(colors).copyWith(
+                    color: colors.brandInk,
+                    fontWeight: FontWeight.w600,
                   ),
+                ),
+                Flexible(
+                  child: Text(
+                    ' · $dateSubtitle',
+                    style: TpTypography.pageSubtitle(colors),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            )
+          : null,
+      title: _greetingTitle(now, auth, tpAuth, campusCard),
+      trailing: _isEditing
+          ? null
+          : Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _HomeHeaderEditButton(
+                  key: const ValueKey('home.edit-toggle'),
+                  onPressed: () => _enterEditMode(isBento),
+                ),
+                if (showHeaderAvatar) ...[
                   const SizedBox(width: TpTokens.space1),
                   TpAvatarBadge(
                     key: const ValueKey('home.avatar'),
@@ -715,19 +736,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
                 ],
               ],
-            ),
-          )
-        : null;
-
-    final header = TpPageHeader(
-      key: const ValueKey('home.greeting-header'),
-      subtitle: dateSubtitle,
-      title: _greetingTitle(now, auth, tpAuth, campusCard),
-      trailing: showHeaderAvatar || _isEditing
-          ? null
-          : _HomeHeaderEditButton(
-              key: const ValueKey('home.edit-toggle'),
-              onPressed: () => _enterEditMode(isBento),
             ),
     );
     final effectiveCardStyle = isBento
@@ -811,7 +819,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  if (mobileBrandBar != null) mobileBrandBar,
                                   header,
                                   SizedBox(
                                     height: isBento
@@ -1026,7 +1033,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         key: const ValueKey('not-logged-in'),
         colors: colors,
         icon: TpIcons.login,
-        accentColor: colors.brandInk,
+        useBrandAccent: true,
         title: '登录以查看今日课程',
         subtitle: '连接你的教务系统账号',
         actionLabel: '登录',
@@ -1044,7 +1051,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         key: ValueKey('no-courses-${_now.weekday}'),
         colors: colors,
         icon: TpIcons.sun,
-        accentColor: colors.warningAmber,
         title: '今天没有课程',
         subtitle: '享受你的自由时间吧',
       );
@@ -1172,7 +1178,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         key: const ValueKey('no-pending'),
         colors: colors,
         icon: TpIcons.checkCircle,
-        accentColor: colors.successGreen,
         title: '没有待办事项',
         subtitle: 'All caught up!',
       );
@@ -1273,9 +1278,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final isExamInProgress = a is ExamAssignment && a.isInProgressAt(now);
     final inLateWindow = a.effectiveLateDue != null && a.due.isBefore(now);
     final activeDue = inLateWindow ? a.effectiveLateDue! : a.due;
-    final dueColor = (isExamInProgress || inLateWindow)
-        ? colors.dangerRed
-        : _dueColor(activeDue, now, colors);
+    final visuals = _dueVisuals(
+      activeDue,
+      now,
+      colors,
+      forceUrgent: isExamInProgress || inLateWindow,
+    );
     final dueLabel = isExamInProgress
         ? '考试中'
         : (inLateWindow
@@ -1301,7 +1309,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       subtitle: detail,
       trailingLabel: dueLabel,
       progress: progress,
-      color: dueColor,
+      color: visuals.barColor,
+      trailingColor: visuals.trailingColor,
+      highlightTrailing: visuals.highlightTrailing,
       showDivider: showDivider,
       onTap: () => unawaited(
         a is CustomDeadline
@@ -1336,11 +1346,33 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return '< 1 分钟';
   }
 
-  static Color _dueColor(DateTime due, DateTime now, TpColors colors) {
+  static ({Color barColor, Color trailingColor, bool highlightTrailing})
+      _dueVisuals(
+    DateTime due,
+    DateTime now,
+    TpColors colors, {
+    bool forceUrgent = false,
+  }) {
     final diff = due.difference(now);
-    if (diff.inHours < 24) return colors.dangerRed;
-    if (diff.inDays < 3) return colors.warningAmber;
-    return colors.infoBlue;
+    if (forceUrgent || diff.inHours < 24) {
+      return (
+        barColor: colors.dangerRed,
+        trailingColor: colors.dangerRed,
+        highlightTrailing: true,
+      );
+    }
+    if (diff.inDays < 3) {
+      return (
+        barColor: colors.warningAmber,
+        trailingColor: colors.warningAmber,
+        highlightTrailing: false,
+      );
+    }
+    return (
+      barColor: colors.textPrimary.withValues(alpha: colors.isDark ? 0.24 : 0.16),
+      trailingColor: colors.textMuted,
+      highlightTrailing: false,
+    );
   }
 
   Future<void> _openAssignmentUrl(Assignment a) async {
@@ -1365,7 +1397,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     required IconData icon,
     required String title,
     required String subtitle,
-    Color? accentColor,
+    bool useBrandAccent = false,
     Widget? leading,
     String? actionLabel,
     String? actionSfSymbol,
@@ -1374,26 +1406,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }) {
     final resolvedBadge = leading ??
         Container(
-          width: 38,
-          height: 38,
+          width: 36,
+          height: 36,
           decoration: BoxDecoration(
-            color: accentColor != null
-                ? accentColor.withValues(alpha: colors.isDark ? 0.16 : 0.10)
-                : colors.surfaceSubtle,
-            borderRadius: BorderRadius.circular(TpTokens.radiusS),
-            border: accentColor != null
-                ? Border.all(
-                    color: accentColor.withValues(
-                      alpha: colors.isDark ? 0.28 : 0.18,
-                    ),
-                    width: 0.75,
-                  )
-                : null,
+            color: useBrandAccent ? colors.brandSoft : colors.surfaceSubtle,
+            shape: BoxShape.circle,
           ),
           child: Icon(
             icon,
-            size: TpTokens.iconM - 2,
-            color: accentColor ?? colors.textMuted,
+            size: TpTokens.iconS + 1,
+            color: useBrandAccent ? colors.brandInk : colors.textMuted,
           ),
         );
 
@@ -1620,41 +1642,24 @@ class _HomeHeaderEditButton extends StatelessWidget {
           child: Center(
             child: TpPressScale(
               pressedScale: 0.92,
-              child: DecoratedBox(
-                decoration: colors.isDark
-                    ? const BoxDecoration(shape: BoxShape.circle)
-                    : BoxDecoration(
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.05),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                child: Material(
-                  color: colors.isDark ? colors.surfaceSubtle : colors.surface,
-                  shape: CircleBorder(
-                    side: BorderSide(
-                      color: colors.isDark ? colors.border : colors.divider,
-                      width: 0.75,
-                    ),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: TpTapSurface(
-                    style: TpTapFeedbackStyle.button,
-                    customBorder: const CircleBorder(),
-                    enablePressScale: false,
-                    onTap: onPressed,
-                    child: SizedBox(
-                      width: 38,
-                      height: 38,
-                      child: Icon(
-                        TpIcons.dashboard,
-                        size: TpTokens.iconS,
-                        color: colors.textSecondary,
-                      ),
+              child: Material(
+                color: colors.textPrimary.withValues(
+                  alpha: colors.isDark ? 0.08 : 0.055,
+                ),
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: TpTapSurface(
+                  style: TpTapFeedbackStyle.button,
+                  customBorder: const CircleBorder(),
+                  enablePressScale: false,
+                  onTap: onPressed,
+                  child: SizedBox(
+                    width: 36,
+                    height: 36,
+                    child: Icon(
+                      TpIcons.dashboard,
+                      size: TpTokens.iconS,
+                      color: colors.textSecondary,
                     ),
                   ),
                 ),

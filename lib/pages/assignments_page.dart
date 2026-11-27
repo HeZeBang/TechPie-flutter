@@ -1680,7 +1680,7 @@ class _AssignmentRowState extends State<_AssignmentRow> {
       if (isPast || isLateWindow || isExamInProgress) return colors.dangerRed;
       if (hoursLeft < 24) return colors.dangerRed;
       if (hoursLeft < 72) return colors.warningAmber;
-      return colors.infoBlue;
+      return colors.textPrimary.withValues(alpha: colors.isDark ? 0.24 : 0.16);
     }();
     final Color countdownColor = isCalm ? colors.textMuted : urgencyColor;
 
