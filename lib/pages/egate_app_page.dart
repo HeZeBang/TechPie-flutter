@@ -18,25 +18,35 @@ import '../widgets/ios/ios_native_navigation_bar.dart';
 import '../widgets/page_refresh.dart';
 import '../widgets/scanner/scan_page.dart';
 import '../widgets/uni_auth_login.dart';
+import 'egate_discovery.dart';
+import 'emap_action_dialog.dart';
 import 'third_party_accounts_page.dart';
 
-/// "校园签到" — queries the egate-app (xshdapp) sign-in announcement +
-/// history and lets the user submit a check-in for a scanned WID. Session
-/// cookies are derived from the ids binding (see EgateAppService), so
-/// this page mirrors OaGymPage's ready/unready gating.
-class EgateAppPage extends StatefulWidget {
+class EgateAppPage extends StatelessWidget {
   const EgateAppPage({super.key});
-
   @override
-  State<EgateAppPage> createState() => _EgateAppPageState();
+  Widget build(BuildContext context) {
+    final service = ServiceProvider.of(context).egateAppService;
+    return ListenableBuilder(
+      listenable: service,
+      builder: (_, __) => _AccountActivities(key: ValueKey((service, service.revision))),
+    );
+  }
 }
 
-class _EgateAppPageState extends State<EgateAppPage> {
+class _AccountActivities extends StatefulWidget {
+  const _AccountActivities({super.key});
+  @override
+  State<_AccountActivities> createState() => _EgateAppPageState();
+}
+
+class _EgateAppPageState extends State<_AccountActivities> {
   bool _loading = false;
   bool _submitting = false;
   String? _error;
   String? _message;
-  List<EgateAppSignRecord> _history = const [];
+  bool _discover = true;
+  int _refreshRevision = 0;
   bool _loadedOnce = false;
 
   Future<void> _handlePrerequisite() async {
@@ -58,38 +68,38 @@ class _EgateAppPageState extends State<EgateAppPage> {
   }
 
   Future<void> _refresh(EgateAppService service) async {
+    final revision = ++_refreshRevision;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final results = await Future.wait([
-        service.fetchSignMessage(),
-        service.fetchSignHistory(),
+      await Future.wait<void>([
+        service.fetchSignMessage().then((message) {
+          if (mounted && revision == _refreshRevision) setState(() => _message = message);
+        }),
+        service.fetchSignHistory().then<void>((_) {}),
       ]);
-      if (!mounted) return;
-      setState(() {
-        _message = results[0] as String;
-        _history = results[1] as List<EgateAppSignRecord>;
-      });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || revision != _refreshRevision) return;
       setState(() => _error = e.toString());
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && revision == _refreshRevision) setState(() => _loading = false);
     }
   }
 
   Future<void> _submitCheckin(EgateAppService service, String wid) async {
     if (_submitting) return;
+    final revision = service.revision;
+    if (!await confirmEmapAction(context, '提交签到', '将此签到码提交至学校活动系统') || !mounted) return;
     setState(() => _submitting = true);
     try {
+      service.check(revision);
       final result = await service.submitCheckin(wid);
       if (!mounted) return;
       showAdaptiveFeedback(
         context: context,
-        message: result.message,
-        style: AdaptiveFeedbackStyle.success,
+        message: result,
       );
       unawaited(_refresh(service));
     } catch (e) {
@@ -157,8 +167,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
                 ),
                 FilledButton(
                   onPressed: canSubmit
-                      ? () =>
-                          Navigator.of(dialogContext).pop(controller.text.trim())
+                      ? () => Navigator.of(dialogContext).pop(controller.text.trim())
                       : null,
                   child: const Text('提交'),
                 ),
@@ -180,6 +189,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
     final auth = sp.authService;
     final tpAuth = sp.thirdPartyAuthService;
     final service = sp.egateAppService;
+    final history = service.history;
     final topInset = AdaptiveNavigationScaffold.contentTopInsetOf(
       context,
       extra: TpTokens.space4,
@@ -189,11 +199,10 @@ class _EgateAppPageState extends State<EgateAppPage> {
 
     return Scaffold(
       backgroundColor: colors.canvas,
-      extendBodyBehindAppBar:
-          AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
+      extendBodyBehindAppBar: AdaptiveNavigationScaffold.extendsBodyBehindAppBar(),
       appBar: AdaptiveNavigationScaffold.adaptiveBar(
         ios: () => IosNativeNavigationBar(
-          title: '校园签到',
+          title: '学生活动',
           leadingItems: const [
             IosNativeNavigationBarItem(
               id: 'back',
@@ -210,7 +219,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
           },
         ),
         material: () => BlurredAppBar(
-          title: const Text('校园签到'),
+          title: const Text('学生活动'),
           actions: [
             if (isDesktop())
               ListenableBuilder(
@@ -248,8 +257,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
                           height: 48,
                           decoration: BoxDecoration(
                             color: colors.opaqueBrandContainer,
-                            borderRadius:
-                                BorderRadius.circular(TpTokens.radiusM),
+                            borderRadius: BorderRadius.circular(TpTokens.radiusM),
                           ),
                           alignment: Alignment.center,
                           child: Icon(
@@ -261,14 +269,13 @@ class _EgateAppPageState extends State<EgateAppPage> {
                         const SizedBox(height: TpTokens.space4),
                         Text(
                           auth.isLoggedIn ? '需要绑定 IDS 账号' : '需要先登录 TechPie',
-                          style: TpTypography.cardTitle(colors)
-                              .copyWith(fontSize: 18),
+                          style: TpTypography.cardTitle(colors).copyWith(fontSize: 18),
                         ),
                         const SizedBox(height: TpTokens.space2),
                         Text(
                           auth.isLoggedIn
-                              ? '校园签到复用 IDS 绑定的校园网登录态，请在「第三方账号」中绑定 IDS 后再使用。'
-                              : '校园签到复用 IDS 绑定的校园网登录态，不需要单独保存密码。',
+                              ? '学生活动复用 IDS 绑定的校园网登录态，请在「第三方账号」中绑定 IDS 后再使用。'
+                              : '学生活动复用 IDS 绑定的校园网登录态，不需要单独保存密码。',
                           style: TpTypography.itemMeta(colors).copyWith(
                             fontSize: 13.5,
                             height: 1.45,
@@ -277,17 +284,13 @@ class _EgateAppPageState extends State<EgateAppPage> {
                         const SizedBox(height: TpTokens.space4),
                         AdaptiveButton(
                           onPressed: _handlePrerequisite,
-                          icon: auth.isLoggedIn
-                              ? TpIcons.linkedAccounts
-                              : TpIcons.login,
-                          sfSymbol: auth.isLoggedIn
-                              ? 'key.horizontal'
-                              : 'person.crop.circle.badge.plus',
+                          icon: auth.isLoggedIn ? TpIcons.linkedAccounts : TpIcons.login,
+                          sfSymbol:
+                              auth.isLoggedIn ? 'key.horizontal' : 'person.crop.circle.badge.plus',
                           label: auth.isLoggedIn ? '去绑定 IDS' : '去登录',
                           role: AdaptiveButtonRole.prominent,
                           height: 46,
-                          accessibilityLabel:
-                              auth.isLoggedIn ? '前往绑定 IDS' : '登录 TechPie',
+                          accessibilityLabel: auth.isLoggedIn ? '前往绑定 IDS' : '登录 TechPie',
                         ),
                       ],
                     ),
@@ -321,8 +324,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
                       if (_error != null) ...[
                         TpCard(
                           color: colors.opaqueDangerContainer,
-                          borderColor:
-                              colors.dangerRed.withValues(alpha: 0.35),
+                          borderColor: colors.dangerRed.withValues(alpha: 0.35),
                           padding: const EdgeInsets.all(TpTokens.space4),
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -341,9 +343,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
                                 ),
                               ),
                               TextButton(
-                                onPressed: _loading
-                                    ? null
-                                    : () => unawaited(_refresh(service)),
+                                onPressed: _loading ? null : () => unawaited(_refresh(service)),
                                 child: const Text('重试'),
                               ),
                             ],
@@ -361,11 +361,7 @@ class _EgateAppPageState extends State<EgateAppPage> {
                           TpTokens.space4,
                         ),
                         child: Text(
-                          _loading
-                              ? '加载中…'
-                              : (_message?.isNotEmpty == true
-                                  ? _message!
-                                  : '暂无签到公告'),
+                          _loading ? '加载中…' : (_message?.isNotEmpty == true ? _message! : '暂无签到公告'),
                           style: TpTypography.itemMeta(colors).copyWith(
                             fontSize: 13.5,
                             color: colors.textSecondary,
@@ -379,9 +375,8 @@ class _EgateAppPageState extends State<EgateAppPage> {
                           if (canScanWithCamera) ...[
                             Expanded(
                               child: AdaptiveButton(
-                                onPressed: _submitting
-                                    ? null
-                                    : () => unawaited(_scanQrCode(service)),
+                                onPressed:
+                                    _submitting ? null : () => unawaited(_scanQrCode(service)),
                                 icon: TpIcons.qrCode,
                                 sfSymbol: 'qrcode.viewfinder',
                                 label: '扫码签到',
@@ -394,9 +389,8 @@ class _EgateAppPageState extends State<EgateAppPage> {
                           ],
                           Expanded(
                             child: AdaptiveButton(
-                              onPressed: _submitting
-                                  ? null
-                                  : () => unawaited(_enterWidManually(service)),
+                              onPressed:
+                                  _submitting ? null : () => unawaited(_enterWidManually(service)),
                               icon: TpIcons.edit,
                               sfSymbol: 'keyboard',
                               label: '手动输入',
@@ -410,53 +404,67 @@ class _EgateAppPageState extends State<EgateAppPage> {
                         ],
                       ),
                       const SizedBox(height: TpTokens.sectionGap),
-                      TpCard(
-                        leadingIcon: TpIcons.calendarCheck,
-                        title: '签到历史',
-                        trailing: _history.isEmpty
-                            ? null
-                            : TpBadge(
-                                label: '${_history.length} 条',
-                                tone: TpBadgeTone.muted,
-                              ),
-                        child: _history.isEmpty && !_loading
-                            ? Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  TpTokens.cardPaddingHorizontal,
-                                  TpTokens.space2,
-                                  TpTokens.cardPaddingHorizontal,
-                                  TpTokens.space5,
-                                ),
-                                child: Text(
-                                  '暂无签到记录',
-                                  style: TpTypography.itemMeta(colors),
-                                  textAlign: TextAlign.center,
-                                ),
-                              )
-                            : Column(
-                                children: [
-                                  for (var i = 0; i < _history.length; i++)
-                                    TpListRow(
-                                      icon: TpIcons.checkCircle,
-                                      title: _history[i].activityName,
-                                      subtitle: [
-                                        _history[i].typeDisplay,
-                                        if (_history[i].date != null)
-                                          _history[i].date!,
-                                      ].where((s) => s.isNotEmpty).join(' · '),
-                                      trailing: _history[i]
-                                              .statusDisplay
-                                              .isEmpty
-                                          ? null
-                                          : TpBadge(
-                                              label: _history[i].statusDisplay,
-                                              tone: TpBadgeTone.success,
-                                            ),
-                                      showDivider: i < _history.length - 1,
-                                    ),
-                                ],
-                              ),
+                      SegmentedButton<bool>(
+                        segments: const [
+                          ButtonSegment(value: true, label: Text('发现活动')),
+                          ButtonSegment(value: false, label: Text('我的活动')),
+                        ],
+                        selected: {_discover},
+                        onSelectionChanged: (set) => setState(() => _discover = set.single),
                       ),
+                      const SizedBox(height: TpTokens.space3),
+                      Offstage(
+                        offstage: !_discover,
+                        child: EgateDiscovery(service: service, onChanged: () => _refresh(service)),
+                      ),
+                      if (!_discover)
+                        TpCard(
+                          leadingIcon: TpIcons.calendarCheck,
+                          title: '报名与签到记录',
+                          trailing: history.isEmpty
+                              ? null
+                              : TpBadge(
+                                  label: '${history.length} 条',
+                                  tone: TpBadgeTone.muted,
+                                ),
+                          child: history.isEmpty && !_loading
+                              ? Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    TpTokens.cardPaddingHorizontal,
+                                    TpTokens.space2,
+                                    TpTokens.cardPaddingHorizontal,
+                                    TpTokens.space5,
+                                  ),
+                                  child: Text(
+                                    '暂无签到记录',
+                                    style: TpTypography.itemMeta(colors),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                )
+                              : Column(
+                                  children: [
+                                    for (var i = 0; i < history.length; i++)
+                                      TpListRow(
+                                        icon: TpIcons.checkCircle,
+                                        title: history[i].activityName,
+                                        subtitle: [
+                                          history[i].typeDisplay,
+                                          if (history[i].entrance.isNotEmpty)
+                                            '入场 ${history[i].entrance}',
+                                          if (history[i].exit.isNotEmpty) '离场 ${history[i].exit}',
+                                          if (history[i].date != null) history[i].date!,
+                                        ].where((s) => s.isNotEmpty).join(' · '),
+                                        trailing: history[i].statusDisplay.isEmpty
+                                            ? null
+                                            : TpBadge(
+                                                label: history[i].statusDisplay,
+                                                tone: TpBadgeTone.success,
+                                              ),
+                                        showDivider: i < history.length - 1,
+                                      ),
+                                  ],
+                                ),
+                        ),
                     ],
                   ),
                 ),
