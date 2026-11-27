@@ -38,96 +38,25 @@ enum DesignSystemRule {
 /// Material usage. Any migrated page MUST be removed immediately.
 const Map<String, Set<DesignSystemRule>> legacyMaterialTransitionPages =
     <String, Set<DesignSystemRule>>{
-  'lib/pages/academic_certificates_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.bareCard,
-    DesignSystemRule.materialIcons,
-    DesignSystemRule.rawSnackBar,
-  },
   'lib/pages/assignments_page.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/campus_card_account_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareCard,
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/campus_jobs_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/course_catalog_search_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
     DesignSystemRule.materialIcons,
   },
   'lib/pages/custom_course_editor_page.dart': <DesignSystemRule>{
     DesignSystemRule.materialIcons,
   },
-  'lib/pages/elearning_course_detail_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.materialIcons,
-    DesignSystemRule.rawSnackBar,
-  },
-  'lib/pages/elearning_hub_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/elrc_recordings_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-  },
-  'lib/pages/emap_history_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.materialIcons,
-  },
   'lib/pages/feedback_page.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/grades_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.bareCard,
     DesignSystemRule.materialIcons,
   },
   'lib/pages/hidden_assignments_page.dart': <DesignSystemRule>{
     DesignSystemRule.materialIcons,
   },
-  'lib/pages/holiday_travel_page.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/pnp_minor_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.bareCard,
-    DesignSystemRule.materialIcons,
-    DesignSystemRule.rawSnackBar,
-  },
   'lib/pages/schedule_page.dart': <DesignSystemRule>{
     DesignSystemRule.materialIcons,
-  },
-  'lib/pages/student_leave_application.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/student_leave_editor.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.materialIcons,
-  },
-  'lib/pages/student_leave_page.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-    DesignSystemRule.rawSnackBar,
-  },
-  'lib/pages/study_plan_page.dart': <DesignSystemRule>{
-    DesignSystemRule.bareAppBar,
-    DesignSystemRule.bareCard,
-    DesignSystemRule.materialIcons,
-    DesignSystemRule.rawSnackBar,
   },
   'lib/pages/sync_settings_page.dart': <DesignSystemRule>{
     DesignSystemRule.materialIcons,
   },
   'lib/pages/third_party_accounts_page.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/widgets/gym/gym_booking_tab.dart': <DesignSystemRule>{
-    DesignSystemRule.materialIcons,
-  },
-  'lib/widgets/gym/gym_shared.dart': <DesignSystemRule>{
     DesignSystemRule.materialIcons,
   },
 };

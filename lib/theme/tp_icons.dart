@@ -30,6 +30,20 @@ abstract final class TpIcons {
   static const IconData allowance = LucideIcons.award;
   static const IconData course = LucideIcons.book_open;
   static const IconData graduation = LucideIcons.graduation_cap;
+  static const IconData briefcase = LucideIcons.briefcase;
+  static const IconData studyPlan = LucideIcons.list_checks;
+  static const IconData luggage = LucideIcons.luggage;
+  static const IconData pnpMinor = LucideIcons.layers;
+  static const IconData print = LucideIcons.printer;
+  static const IconData share = LucideIcons.share_2;
+  static const IconData folder = LucideIcons.folder;
+  static const IconData attach = LucideIcons.paperclip;
+  static const IconData send = LucideIcons.send;
+  static const IconData expandMore = LucideIcons.chevron_down;
+  static const IconData expandLess = LucideIcons.chevron_up;
+  static const IconData trophy = LucideIcons.trophy;
+  static const IconData circleDot = LucideIcons.circle_dot;
+  static const IconData gitBranch = LucideIcons.git_branch;
 
   // Account, privacy & settings.
   static const IconData login = LucideIcons.log_in;

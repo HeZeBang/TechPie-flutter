@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/student_leave.dart';
 import '../services/campus/campus_errors.dart';
 import '../services/student_leave_service.dart';
+import '../theme/theme.dart';
 import '../widgets/design_system/design_system.dart';
 import 'student_leave_editor.dart';
 
@@ -77,129 +78,134 @@ class _StudentLeaveApplicationState extends State<StudentLeaveApplication> {
 
   @override
   Widget build(BuildContext context) => TpCard(
-        child: ExpansionTile(
-          title: const Text('请假申请'),
-          subtitle: const Text('查看申请资格、假种和请假期间的课程'),
-          onExpansionChanged: (open) {
-            if (open && info == null) {
-              loadInfo();
-            }
-          },
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (info != null)
-              FutureBuilder<LeaveApplicationInfo>(
-                future: info,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState != ConnectionState.done) {
-                    return const LinearProgressIndicator();
-                  }
-                  if (snapshot.hasError) {
-                    return retry(
-                      snapshot.error,
-                      loadInfo,
-                    );
-                  }
-                  final data = snapshot.requireData;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text('本学期已请假 ${data.daysUsed} 天'),
-                      const SizedBox(height: 8),
-                      if (!data.eligible)
-                        Text(data.reason.isEmpty ? '当前无法申请请假' : data.reason)
-                      else ...[
-                        DropdownButtonFormField<String>(
-                          decoration: const InputDecoration(labelText: '请假性质'),
-                          items: [
-                            for (final entry in data.properties.entries)
-                              DropdownMenuItem(value: entry.key, child: Text(entry.value)),
-                          ],
-                          onChanged: selectProperty,
-                        ),
-                        if (types != null)
-                          FutureBuilder<List<LeaveKind>>(
-                            future: types,
-                            builder: (context, result) {
-                              if (result.connectionState != ConnectionState.done) {
-                                return const LinearProgressIndicator();
-                              }
-                              if (result.hasError) {
-                                return retry(result.error, () => selectProperty(property));
-                              }
-                              if (result.requireData.isEmpty) return const Text('当前性质下没有可选假种');
-                              return DropdownButtonFormField<LeaveKind>(
-                                key: ValueKey(property),
-                                decoration: const InputDecoration(labelText: '请假类型'),
-                                items: [
-                                  for (final item in result.requireData)
-                                    DropdownMenuItem(value: item, child: Text(item.label)),
-                                ],
-                                onChanged: (value) => setState(() {
-                                  kind = value;
-                                  dates = null;
-                                  courses = null;
-                                }),
-                              );
-                            },
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            title: const Text('请假申请'),
+            subtitle: const Text('查看申请资格、假种和请假期间的课程'),
+            onExpansionChanged: (open) {
+              if (open && info == null) {
+                loadInfo();
+              }
+            },
+            childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (info != null)
+                FutureBuilder<LeaveApplicationInfo>(
+                  future: info,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const LinearProgressIndicator();
+                    }
+                    if (snapshot.hasError) {
+                      return retry(
+                        snapshot.error,
+                        loadInfo,
+                      );
+                    }
+                    final data = snapshot.requireData;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text('本学期已请假 ${data.daysUsed} 天'),
+                        const SizedBox(height: 8),
+                        if (!data.eligible)
+                          Text(data.reason.isEmpty ? '当前无法申请请假' : data.reason)
+                        else ...[
+                          DropdownButtonFormField<String>(
+                            decoration: const InputDecoration(labelText: '请假性质'),
+                            items: [
+                              for (final entry in data.properties.entries)
+                                DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+                            ],
+                            onChanged: selectProperty,
                           ),
-                        if (kind != null)
-                          OutlinedButton.icon(
-                            icon: const Icon(Icons.date_range),
-                            onPressed: selectDates,
-                            label: Text(
-                              dates == null
-                                  ? '选择请假日期'
-                                  : '${_day(dates!.start)} 至 ${_day(dates!.end)}',
-                            ),
-                          ),
-                        if (courses != null)
-                          FutureBuilder<String>(
-                            future: courses,
-                            builder: (context, result) {
-                              if (result.connectionState != ConnectionState.done) {
-                                return const LinearProgressIndicator();
-                              }
-                              if (result.hasError) {
-                                return retry(
-                                  result.error,
-                                  () => setState(() {
-                                    courses = widget.service
-                                        .affectedCourses(dates!.start, dates!.end, revision);
+                          if (types != null)
+                            FutureBuilder<List<LeaveKind>>(
+                              future: types,
+                              builder: (context, result) {
+                                if (result.connectionState != ConnectionState.done) {
+                                  return const LinearProgressIndicator();
+                                }
+                                if (result.hasError) {
+                                  return retry(result.error, () => selectProperty(property));
+                                }
+                                if (result.requireData.isEmpty) {
+                                  return const Text('当前性质下没有可选假种');
+                                }
+                                return DropdownButtonFormField<LeaveKind>(
+                                  key: ValueKey(property),
+                                  decoration: const InputDecoration(labelText: '请假类型'),
+                                  items: [
+                                    for (final item in result.requireData)
+                                      DropdownMenuItem(value: item, child: Text(item.label)),
+                                  ],
+                                  onChanged: (value) => setState(() {
+                                    kind = value;
+                                    dates = null;
+                                    courses = null;
                                   }),
                                 );
-                              }
-                              return Text(
-                                result.requireData.isEmpty
-                                    ? '所选日期没有课程'
-                                    : '涉及课程：${result.requireData}',
-                              );
-                            },
-                          ),
-                        if (dates != null && kind != null)
-                          FilledButton(
-                            onPressed: () => openStudentLeaveEditor(
-                              context,
-                              widget.service,
-                              initial: {
-                                'QJXZ': property!,
-                                'QJXZ_DISPLAY': data.properties[property!]!,
-                                'QJLX': kind!.id,
-                                'QJLX_DISPLAY': kind!.label,
-                                'QJKSRQ': _day(dates!.start),
-                                'QJJSRQ': _day(dates!.end),
                               },
                             ),
-                            child: const Text('填写申请'),
-                          ),
+                          if (kind != null)
+                            OutlinedButton.icon(
+                              icon: const Icon(TpIcons.calendar),
+                              onPressed: selectDates,
+                              label: Text(
+                                dates == null
+                                    ? '选择请假日期'
+                                    : '${_day(dates!.start)} 至 ${_day(dates!.end)}',
+                              ),
+                            ),
+                          if (courses != null)
+                            FutureBuilder<String>(
+                              future: courses,
+                              builder: (context, result) {
+                                if (result.connectionState != ConnectionState.done) {
+                                  return const LinearProgressIndicator();
+                                }
+                                if (result.hasError) {
+                                  return retry(
+                                    result.error,
+                                    () => setState(() {
+                                      courses = widget.service
+                                          .affectedCourses(dates!.start, dates!.end, revision);
+                                    }),
+                                  );
+                                }
+                                return Text(
+                                  result.requireData.isEmpty
+                                      ? '所选日期没有课程'
+                                      : '涉及课程：${result.requireData}',
+                                );
+                              },
+                            ),
+                          if (dates != null && kind != null)
+                            FilledButton(
+                              onPressed: () => openStudentLeaveEditor(
+                                context,
+                                widget.service,
+                                initial: {
+                                  'QJXZ': property!,
+                                  'QJXZ_DISPLAY': data.properties[property!]!,
+                                  'QJLX': kind!.id,
+                                  'QJLX_DISPLAY': kind!.label,
+                                  'QJKSRQ': _day(dates!.start),
+                                  'QJJSRQ': _day(dates!.end),
+                                },
+                              ),
+                              child: const Text('填写申请'),
+                            ),
+                        ],
                       ],
-                    ],
-                  );
-                },
-              ),
-            widget.schoolFormButton,
-          ],
+                    );
+                  },
+                ),
+              widget.schoolFormButton,
+            ],
+          ),
         ),
       );
 

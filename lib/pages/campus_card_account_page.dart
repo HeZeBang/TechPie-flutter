@@ -8,12 +8,14 @@ import '../services/campus_card_service.dart';
 import '../services/ecard_bind_hijack.dart';
 import '../services/ecard_bind_service.dart';
 import '../services/service_provider.dart';
+import '../theme/tp_icons.dart';
 import '../theme/tp_tokens.dart';
 import '../utils/platform.dart';
 import '../widgets/adaptive_alert_dialog.dart';
 import '../widgets/adaptive_ecard_wizard.dart';
 import '../widgets/adaptive_page_navigation.dart';
 import '../widgets/adaptive_text_field_group.dart';
+import '../widgets/design_system/tp_card.dart';
 import 'ecard_wizard_copy.dart';
 import 'sync_settings_page.dart';
 
@@ -256,7 +258,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
       showCard = true;
       title = heading(WizardStep.success).title;
       description = heading(WizardStep.success).description;
-      stateIcon = Icons.check;
+      stateIcon = TpIcons.check;
       controls.add(_button(_text('Done', '完成'), () => setState(() => _justConnected = false)));
     } else if (_card.configured) {
       showCard = true;
@@ -272,7 +274,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
       );
       if (_binding.hijackNeedsStop) controls.add(cancelButton);
     } else if (_pending != null) {
-      stateIcon = Icons.wifi;
+      stateIcon = TpIcons.activity;
       title = heading(WizardStep.retry).title;
       description = _text(
         'Your code was accepted. You can retry without entering it again.',
@@ -354,7 +356,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
       );
       controls.add(_button(_text('Open Cloud sync', '打开云同步'), _openCloudSync));
     } else if (_binding.hijackActive) {
-      stateIcon = Icons.pin_outlined;
+      stateIcon = TpIcons.code;
       title = heading(WizardStep.code).title;
       description =
           _text('Enter the code shown in the campus card mini program.', '请输入一卡通小程序中显示的绑定码。');
@@ -382,7 +384,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
         cancelButton,
       ]);
     } else if (_reviewing) {
-      stateIcon = Icons.lock_outline;
+      stateIcon = TpIcons.lock;
       title = heading(WizardStep.permission).title;
       description = _text(
         'While setup is active, this device’s DNS lookups go through the binding service. Your current VPN may pause. The temporary connection stops when you finish or cancel.',
@@ -406,8 +408,7 @@ class _CampusCardAccountPageState extends State<CampusCardAccountPage> with Widg
     }
 
     final details = _card.configured && !_justConnected
-        ? Card(
-            elevation: 0,
+        ? TpCard(
             child: Column(
               children: [
                 ListTile(

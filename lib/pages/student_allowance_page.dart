@@ -16,6 +16,7 @@ import '../widgets/app_shell/app_shell_metrics.dart';
 import '../widgets/blurred_app_bar.dart';
 import '../widgets/design_system/design_system.dart';
 import '../widgets/ios/ios_native_navigation_bar.dart';
+import '../widgets/page_refresh.dart';
 import '../widgets/schedule_picker_sheet.dart';
 import '../widgets/uni_auth_login.dart';
 import 'third_party_accounts_page.dart';
@@ -166,6 +167,7 @@ class _AllowanceQueryState extends State<_AllowanceQuery> {
   late DateTime _end;
   late DateTime _currentMonth;
   bool _loading = false;
+  bool _hideAmounts = false;
   String? _error;
   StudentAllowanceReport? _report;
 
@@ -177,6 +179,16 @@ class _AllowanceQueryState extends State<_AllowanceQuery> {
     _currentMonth = DateTime(now.year, now.month);
     _start = DateTime(now.year, now.month - 11);
     _end = _currentMonth;
+  }
+
+  void _applyPreset(DateTime start, DateTime end) {
+    if (_loading || (_start == start && _end == end)) return;
+    setState(() {
+      _start = start;
+      _end = end;
+      _report = null;
+      _error = null;
+    });
   }
 
   Future<void> _selectMonth({required bool start}) async {
@@ -240,7 +252,13 @@ class _AllowanceQueryState extends State<_AllowanceQuery> {
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final report = _report;
-    return ListView(
+    final presets = <(String, DateTime)>[
+      ('近 3 个月', DateTime(_currentMonth.year, _currentMonth.month - 2)),
+      ('近 6 个月', DateTime(_currentMonth.year, _currentMonth.month - 5)),
+      ('近 12 个月', DateTime(_currentMonth.year, _currentMonth.month - 11)),
+      ('今年', DateTime(_currentMonth.year, 1)),
+    ];
+    final list = ListView(
       padding: widget.padding,
       children: [
         TpPageBody(
@@ -250,6 +268,14 @@ class _AllowanceQueryState extends State<_AllowanceQuery> {
               TpCard(
                 leadingIcon: TpIcons.calendar,
                 title: '发放月份',
+                trailing: IconButton(
+                  tooltip: _hideAmounts ? '显示金额' : '隐藏金额',
+                  onPressed: () => setState(() => _hideAmounts = !_hideAmounts),
+                  icon: Icon(
+                    _hideAmounts ? TpIcons.eyeOff : TpIcons.eye,
+                    size: TpTokens.iconS,
+                  ),
+                ),
                 padding: const EdgeInsets.fromLTRB(
                   TpTokens.cardPaddingHorizontal,
                   TpTokens.space1,
@@ -259,6 +285,23 @@ class _AllowanceQueryState extends State<_AllowanceQuery> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Wrap(
+                      spacing: TpTokens.space2,
+                      runSpacing: TpTokens.space1,
+                      children: [
+                        for (final (label, presetStart) in presets)
+                          ChoiceChip(
+                            label: Text(label),
+                            selected:
+                                _start == presetStart && _end == _currentMonth,
+                            onSelected: _loading
+                                ? null
+                                : (_) =>
+                                    _applyPreset(presetStart, _currentMonth),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: TpTokens.space2),
                     Wrap(
                       spacing: TpTokens.space2,
                       runSpacing: TpTokens.space2,
@@ -306,7 +349,12 @@ class _AllowanceQueryState extends State<_AllowanceQuery> {
                 )
               else if (report != null) ...[
                 if (report.total case final total?) ...[
-                  _AllowanceTile(title: '查询区间合计', entry: total, isTotal: true),
+                  _AllowanceTile(
+                    title: '查询区间合计',
+                    entry: total,
+                    isTotal: true,
+                    hideAmounts: _hideAmounts,
+                  ),
                   const SizedBox(height: TpTokens.sectionGap),
                 ],
                 if (report.months.isEmpty)
@@ -321,8 +369,11 @@ class _AllowanceQueryState extends State<_AllowanceQuery> {
                   ),
                 for (final entry in report.months) ...[
                   _AllowanceTile(
-                    title: _monthText(entry.month!),
+                    title: entry.month == null
+                        ? '未知月份'
+                        : _monthText(entry.month!),
                     entry: entry,
+                    hideAmounts: _hideAmounts,
                   ),
                   const SizedBox(height: TpTokens.space2),
                 ],
@@ -342,6 +393,13 @@ class _AllowanceQueryState extends State<_AllowanceQuery> {
         ),
       ],
     );
+    if (report != null) {
+      return PageRefreshIndicator(
+        onRefresh: _query,
+        child: list,
+      );
+    }
+    return list;
   }
 }
 
@@ -350,11 +408,15 @@ class _AllowanceTile extends StatelessWidget {
     required this.title,
     required this.entry,
     this.isTotal = false,
+    this.hideAmounts = false,
   });
 
   final String title;
   final StudentAllowanceEntry entry;
   final bool isTotal;
+  final bool hideAmounts;
+
+  String _amount(int? fen) => hideAmounts ? '¥****' : _amountText(fen);
 
   @override
   Widget build(BuildContext context) {
@@ -368,7 +430,7 @@ class _AllowanceTile extends StatelessWidget {
             style: TpTypography.itemTitle(colors),
           ),
           subtitle: Text(
-            '实发 ${_amountText(entry.netFen)}',
+            '实发 ${_amount(entry.netFen)}',
             style: TpTypography.itemMeta(colors).copyWith(
               color: isTotal ? colors.brandInk : colors.textSecondary,
               fontWeight: FontWeight.w600,
@@ -387,15 +449,15 @@ class _AllowanceTile extends StatelessWidget {
               runSpacing: TpTokens.space1,
               children: [
                 Text(
-                  '应发 ${_amountText(entry.grossFen)}',
+                  '应发 ${_amount(entry.grossFen)}',
                   style: TpTypography.itemMeta(colors),
                 ),
                 Text(
-                  '扣款 ${_amountText(entry.deductionsFen)}',
+                  '扣款 ${_amount(entry.deductionsFen)}',
                   style: TpTypography.itemMeta(colors),
                 ),
                 Text(
-                  '扣税 ${_amountText(entry.taxFen)}',
+                  '扣税 ${_amount(entry.taxFen)}',
                   style: TpTypography.itemMeta(colors),
                 ),
               ],
@@ -415,11 +477,11 @@ class _AllowanceTile extends StatelessWidget {
                 runSpacing: TpTokens.space1,
                 children: [
                   Text(
-                    '应发 ${_amountText(category.grossFen)}',
+                    '应发 ${_amount(category.grossFen)}',
                     style: TpTypography.itemMeta(colors),
                   ),
                   Text(
-                    '实发 ${_amountText(category.netFen)}',
+                    '实发 ${_amount(category.netFen)}',
                     style: TpTypography.itemMeta(colors),
                   ),
                 ],
