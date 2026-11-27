@@ -72,6 +72,10 @@ jobs:
           persist-credentials: false
           ref: ${{ inputs.release_tag }}
 
+      # Restore before the first Flutter command: even `flutter --version` can
+      # bootstrap the tool and need Git dependencies from the pub cache.
+      - uses: ./.github/actions/pub-cache
+
       # The image asserts its own toolchain at build time (see the end of
       # ci/Dockerfile.ohos-buildenv); this catches the other failure mode — a
       # workflow pointing at a tag that was never pushed, or one whose package
@@ -121,15 +125,7 @@ jobs:
           df -h /workspace | tail -1
 
       # The mirrors (PUB_HOSTED_URL and both FLUTTER_*_STORAGE_BASE_URL) come from
-      # the image's environment, matching .envrc on the developer machine.
-      # The pub cache, defined once in .github/actions/pub-cache. Read-only here.
-      # This job runs inside the build-environment image, whose HOME is a fresh
-      # mount every run, so it used to be the one platform with no warm cache at
-      # all (136 and 164 seconds against Linux's 5). `~` resolves to that mounted
-      # home, and the path is on the runner, so the action can archive it from
-      # inside the container.
-      - uses: ./.github/actions/pub-cache
-
+      # the image's environment, matching .envrc on a developer machine.
       - name: Resolve dependencies
         shell: bash
         run: |
