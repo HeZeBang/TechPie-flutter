@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_schedule_title">Schedule</string>
+    <string name="widget_schedule_description">View today\'s classes and live course progress</string>
+    <string name="widget_deadline_title">Deadlines</string>
+    <string name="widget_deadline_description">Track upcoming assignments and exam deadlines</string>
+    <string name="widget_overview_title">Today Overview</string>
+    <string name="widget_overview_description">At-a-glance schedule and upcoming deadlines</string>
+    <string name="widget_ecard_unbound">Unbound</string>
+    <string name="widget_ecard_bind_hint">Bind Campus Card in TechPie</string>
+    <string name="widget_ecard_show_balance">Show balance</string>
+    <string name="widget_ecard_hide_balance">Hide balance</string>
+    <string name="widget_ecard_card_brand">ShanghaiTech Campus Card</string>
+    <string name="widget_schedule_today">Today</string>
+    <string name="widget_schedule_tomorrow">Tomorrow</string>
+    <string name="widget_schedule_next_day">Next Day</string>
+    <string name="widget_schedule_switch_today">Today</string>
+    <string name="widget_schedule_switch_tomorrow">Tomorrow</string>
+    <string name="widget_schedule_week_fmt">Wk %1$d</string>
+    <string name="widget_schedule_period_fmt">P%1$s</string>
+    <string name="widget_schedule_in_progress">In Class</string>
+    <string name="widget_schedule_next_class">Next</string>
+    <string name="widget_schedule_no_more_classes">No more classes today</string>
+    <string name="widget_schedule_tomorrow_empty">No classes tomorrow</string>
+    <string name="widget_schedule_sync_hint">Open TechPie to sync schedule</string>
+    <string name="widget_due_soon">Due soon</string>
+    <string name="widget_countdown_hours">%1$dh</string>
+    <string name="widget_countdown_days_hours">%1$dd %2$dh</string>
+    <string name="widget_countdown_days">%1$dd</string>
+    <string name="widget_more_count">+%1$d more</string>
+    <string name="widget_deadlines_empty">All caught up</string>
+    <string name="widget_deadlines_sync_hint">Open TechPie to sync deadlines</string>
+    <string name="widget_deadline_kind_assignment">Assignment</string>
+    <string name="widget_deadline_kind_exam">Exam</string>
+</resources>

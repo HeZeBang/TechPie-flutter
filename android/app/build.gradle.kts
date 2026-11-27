@@ -12,6 +12,9 @@ val prepareEcardWidgetResources by tasks.registering(Copy::class) {
     from("../../assets/campus_card/images/widget-background.png") {
         rename { "ecard_widget_background.png" }
     }
+    from("../../assets/campus_card/images/card-bottom.png") {
+        rename { "ecard_card_bottom.png" }
+    }
     into(ecardWidgetResources.map { it.dir("drawable-nodpi") })
 }
 

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_schedule_title">课程表</string>
+    <string name="widget_schedule_description">查看今日课程与实时上课进度</string>
+    <string name="widget_deadline_title">截止提醒</string>
+    <string name="widget_deadline_description">追踪近期作业与考试截止时间</string>
+    <string name="widget_overview_title">今日概览</string>
+    <string name="widget_overview_description">一屏速览今日课程与近期截止事项</string>
+    <string name="widget_ecard_unbound">未绑定</string>
+    <string name="widget_ecard_bind_hint">前往 TechPie 绑定校园卡</string>
+    <string name="widget_ecard_show_balance">显示余额</string>
+    <string name="widget_ecard_hide_balance">隐藏余额</string>
+    <string name="widget_ecard_card_brand">上海科技大学一卡通</string>
+    <string name="widget_schedule_today">今日课表</string>
+    <string name="widget_schedule_tomorrow">明日课表</string>
+    <string name="widget_schedule_next_day">下个上课日</string>
+    <string name="widget_schedule_switch_today">看今天</string>
+    <string name="widget_schedule_switch_tomorrow">看明天</string>
+    <string name="widget_schedule_week_fmt">第%1$d周</string>
+    <string name="widget_schedule_period_fmt">第%1$s节</string>
+    <string name="widget_schedule_in_progress">上课中</string>
+    <string name="widget_schedule_next_class">即将开始</string>
+    <string name="widget_schedule_no_more_classes">今日已无更多课程</string>
+    <string name="widget_schedule_tomorrow_empty">明日暂无课程</string>
+    <string name="widget_schedule_sync_hint">打开 TechPie 同步课表</string>
+    <string name="widget_due_soon">即将截止</string>
+    <string name="widget_countdown_hours">%1$d小时</string>
+    <string name="widget_countdown_days_hours">%1$d天%2$d时</string>
+    <string name="widget_countdown_days">%1$d天</string>
+    <string name="widget_more_count">还有 %1$d 项</string>
+    <string name="widget_deadlines_empty">近期暂无待办</string>
+    <string name="widget_deadlines_sync_hint">打开 TechPie 同步截止事项</string>
+    <string name="widget_deadline_kind_assignment">作业</string>
+    <string name="widget_deadline_kind_exam">考试</string>
+</resources>

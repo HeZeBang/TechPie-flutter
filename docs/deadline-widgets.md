@@ -114,9 +114,11 @@ When `hideCampusCardBalance` changes in Flutter, `WidgetPreferenceStore` clears 
 ## Update rules & Platform configuration
 
 - Hosts publish after cache hydration, schedule/deadline/balance/visibility mutations, and foreground return; semantic equality deduplicates reloads. Logout clears `deadline-widget-v1.json` and `schedule-widget-v1.json`.
-- macOS embeds `DeadlineWidgets`, supporting Notification Center on macOS 12+ and desktop widgets on macOS 14+ across all four desktop widgets.
-- iOS reuses the existing `EcardPayWidget` extension (`TechPieWidgets: WidgetBundle`) and existing App Group so no additional App IDs or provisioning profiles are needed.
-- Build settings:
+- **Android**: Ships all four home-screen widgets via zero-dependency `RemoteViews` (`EcardPayWidgetProvider`, `ScheduleWidgetProvider`, `DeadlineWidgetProvider`, `TodayOverviewWidgetProvider`) with responsive `2×2` / `4×2` / `4×4` layouts, OKLCH light/dark course colors, in-widget balance-mask and Today/Tomorrow actions, atomic JSON storage under `filesDir/widgets/`, boundary-scheduled `WorkManager` background updates (`WidgetRefreshWorker`), and intent-filter deep links (`techpie://ecard/pay`, `techpie://schedule`, `techpie://deadlines`).
+- **Apple**:
+  - macOS embeds `DeadlineWidgets`, supporting Notification Center on macOS 12+ and desktop widgets on macOS 14+ across all four desktop widgets.
+  - iOS reuses the existing `EcardPayWidget` extension (`TechPieWidgets: WidgetBundle`) and existing App Group so no additional App IDs or provisioning profiles are needed.
+- Apple Build settings:
   - `TECHPIE_DEADLINE_APP_GROUP`: `$(TeamIdentifierPrefix)club.geekpie.techpie.deadlines` on macOS; `group.club.geekpie.techpie.deadlines` on iOS.
   - `TECHPIE_HOST_BUNDLE_IDENTIFIER`: matches the macOS host bundle identifier.
   - `TECHPIE_WIDGET_URL_SCHEME`: defaults to `techpie`.

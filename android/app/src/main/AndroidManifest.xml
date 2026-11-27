@@ -58,6 +58,18 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="techpie" android:host="ecard" android:path="/pay"/>
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="techpie" android:host="schedule"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="techpie" android:host="deadlines"/>
+            </intent-filter>
         </activity>
         <receiver android:name=".island.IslandFrameReceiver" android:exported="false"/>
         <receiver android:name=".island.IslandRestoreReceiver" android:exported="false">
@@ -78,8 +90,41 @@
         <receiver android:name=".EcardPayWidgetProvider" android:exported="false" android:label="@string/ecard_widget_title">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+                <action android:name="club.geekpie.techpie.widgets.ACTION_TOGGLE_ECARD_MASK"/>
+                <action android:name="club.geekpie.techpie.widgets.ACTION_REFRESH_WIDGETS"/>
             </intent-filter>
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/ecard_pay_widget_info"/>
+        </receiver>
+        <receiver android:name=".widgets.ScheduleWidgetProvider" android:exported="false" android:label="@string/widget_schedule_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+                <action android:name="club.geekpie.techpie.widgets.ACTION_TOGGLE_SCHEDULE_DAY"/>
+                <action android:name="club.geekpie.techpie.widgets.ACTION_REFRESH_WIDGETS"/>
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/schedule_widget_info"/>
+        </receiver>
+        <receiver android:name=".widgets.DeadlineWidgetProvider" android:exported="false" android:label="@string/widget_deadline_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+                <action android:name="club.geekpie.techpie.widgets.ACTION_REFRESH_WIDGETS"/>
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/deadline_widget_info"/>
+        </receiver>
+        <receiver android:name=".widgets.TodayOverviewWidgetProvider" android:exported="false" android:label="@string/widget_overview_title">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+                <action android:name="club.geekpie.techpie.widgets.ACTION_REFRESH_WIDGETS"/>
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/today_overview_widget_info"/>
+        </receiver>
+        <receiver android:name=".widgets.WidgetSystemChangeReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.TIME_SET"/>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED"/>
+                <action android:name="android.intent.action.DATE_CHANGED"/>
+            </intent-filter>
         </receiver>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
