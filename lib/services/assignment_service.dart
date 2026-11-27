@@ -913,17 +913,28 @@ class AssignmentService extends ChangeNotifier {
       final items = await blackboardDeadlines!();
       // The previous endpoint capitalized its platform label. Existing
       // overrides, widget entries and Apple reminder hashes include that case.
-      final legacyIds = {
+      final previousById = {
         for (final item in _remoteAssignments)
-          if (item.platform == 'Blackboard') item.id,
+          if (item.platform.toLowerCase() == 'blackboard') item.id: item,
       };
-      return [
-        for (final item in items)
-          if (legacyIds.contains(item.id))
-            Assignment.fromJson({...item.toJson(), 'platform': 'Blackboard'})
-          else
-            item,
-      ];
+      return items.map((item) {
+        final previous = previousById[item.id];
+        final platform = previous?.platform == 'Blackboard' ? 'Blackboard' : item.platform;
+        // Dates and links can be refreshed even if My Grades is unavailable.
+        final status = item.status ?? (previous?.submitted == true ? previous!.status : null);
+        if (platform == item.platform && status == item.status) return item;
+        return Assignment(
+          id: item.id,
+          platform: platform,
+          kind: item.kind,
+          title: item.title,
+          course: item.course,
+          due: item.due,
+          lateDue: item.lateDue,
+          status: status,
+          url: item.url,
+        );
+      }).toList();
     } catch (e) {
       _platformErrors['blackboard'] = '同步失败，请检查网络或稍后重试';
       return null;

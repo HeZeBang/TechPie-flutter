@@ -256,6 +256,7 @@ void main() {
         gradePageRequests++;
         expect(r.uri.queryParameters['course_id'], 'c');
         return respond('''
+<div id="streamDetailMainBodyRight">
 <div id="101" class="sortable_item_row upcoming_item_row">
   <div class="gradeStatus"><img src="/images/needs_grading.png"></div>
 </div>
@@ -263,6 +264,7 @@ void main() {
   <div class="gradeStatus"><img src="/images/needs_grading.png"></div>
 </div>
 <div id="103" class="sortable_item_row graded_item_row"></div>
+</div>
 ''');
       }
       if (path.endsWith('/columns')) {
@@ -322,6 +324,86 @@ void main() {
     expect(deadlines.first.due.toUtc(), DateTime.utc(2030, 2, 3, 2));
     expect(deadlines.first.url, endsWith('GradableItem-_101_1'));
     expect(deadlines[2].url, contains('content_id=item'));
+  });
+
+  test('keeps other Blackboard deadlines when a course grade page is unavailable', () async {
+    var responseStatus = 429;
+    var gradePage = '<p>Grade page unavailable</p>';
+    final due = DateTime.now().toUtc().add(const Duration(days: 7));
+    final fixture = CampusFixture('https://elearning.shanghaitech.edu.cn:8443', (r) {
+      final path = r.uri.path;
+      if (path.endsWith('/allCourseEvents')) {
+        return respond([
+          {
+            'itemSourceId': '_102_1',
+            'calendarId': 'COURSE-B',
+            'calendarName': 'Shared course name',
+            'title': 'Homework',
+            'end': due.toIso8601String(),
+            'attemptable': true,
+          },
+        ]);
+      }
+      if (path.endsWith('/users/me')) return respond({'id': 'student'});
+      if (path.endsWith('/users/student/courses')) {
+        return respond({
+          'results': [
+            {'courseId': 'a'},
+            {'courseId': 'b'},
+          ],
+        });
+      }
+      if (path.endsWith('/terms')) return respond({'results': []});
+      if (path.endsWith('/courses/a') || path.endsWith('/courses/b')) {
+        final id = r.uri.pathSegments.last;
+        return respond({
+          'id': id,
+          'courseId': 'COURSE-${id.toUpperCase()}',
+          'name': 'Shared course name',
+        });
+      }
+      if (path.endsWith('/gradebook/columns')) {
+        final isCourseA = path.contains('/courses/a/');
+        return respond({
+          'results': [
+            {
+              'id': isCourseA ? '_101_1' : '_102_1',
+              'name': 'Homework',
+              'grading': {'due': due.toIso8601String()},
+            },
+            if (isCourseA)
+              {
+                'id': '_103_1',
+                'name': 'Other Homework',
+                'grading': {'due': due.toIso8601String()},
+              },
+          ],
+        });
+      }
+      if (path.endsWith('/myGrades')) {
+        return r.uri.queryParameters['course_id'] == 'a'
+            ? respond(gradePage, status: responseStatus)
+            : respond('<div id="streamDetailMainBodyRight"></div>');
+      }
+      fail(path);
+    });
+    final service = ElearningService(ElearningClient(fixture.session));
+    for (final status in [429, 403, 200]) {
+      responseStatus = status;
+      final deadlines = {for (final item in await service.deadlines()) item.id: item};
+      expect(deadlines['_102_1']?.status, 'Open');
+      expect(deadlines['_103_1']?.due, due.toLocal());
+      expect(deadlines['_103_1']?.status, isNull);
+    }
+
+    gradePage = '''
+<div id="streamDetailMainBodyRight">
+  <div id="101" class="sortable_item_row graded_item_row"></div>
+  <div id="103" class="sortable_item_row graded_item_row"></div>
+</div>''';
+    final deadlines = {for (final item in await service.deadlines()) item.id: item};
+    expect(deadlines['_103_1']?.status, 'Graded');
+    expect(deadlines['_102_1']?.status, 'Open');
   });
 
   testWidgets('folder node detail renders body, attachments and child contents', (tester) async {
