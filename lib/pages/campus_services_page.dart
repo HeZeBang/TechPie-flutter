@@ -64,10 +64,17 @@ class _CampusServicesPageState extends State<CampusServicesPage> {
   Widget build(BuildContext context) {
     final colors = context.tpColors;
     final query = _query.trim().toLowerCase();
+    final compactQuery = query.replaceAll(RegExp(r"[\s'\u2019\u3000]+"), '');
     final results = featureEntries
         .where(
-          (f) => [f.description, f.subtitle, ...f.keywords]
-              .any((text) => text.toLowerCase().contains(query)),
+          (f) => [f.description, f.subtitle, ...f.keywords].any((text) {
+            final lower = text.toLowerCase();
+            return lower.contains(query) ||
+                (compactQuery.isNotEmpty &&
+                    lower
+                        .replaceAll(RegExp(r"[\s'\u2019\u3000]+"), '')
+                        .contains(compactQuery));
+          }),
         )
         .toList();
 

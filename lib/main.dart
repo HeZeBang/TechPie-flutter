@@ -37,6 +37,7 @@ import 'services/pnp_minor_service.dart';
 import 'services/schedule_service.dart';
 import 'services/service_provider.dart';
 import 'services/spending_alert_service.dart';
+import 'services/spotlight_service.dart';
 import 'services/storage_service.dart';
 import 'services/student_allowance_service.dart';
 import 'services/student_leave_service.dart';
@@ -200,6 +201,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
   );
   final deadlineReminderService =
       isApple ? DeadlineReminderService(assignmentService) : null;
+  final spotlightService = SpotlightService();
   final syncService = SyncService(
     authService,
     thirdPartyAuthService,
@@ -296,6 +298,7 @@ Future<void> _realMain(SharedPreferences prefs) async {
       homeWidgetsService: homeWidgetsService,
       deadlineReminderService: deadlineReminderService,
       spendingAlertService: spendingAlertService,
+      spotlightService: spotlightService,
       islandService: islandService,
     ),
   );
@@ -307,6 +310,9 @@ Future<void> _realMain(SharedPreferences prefs) async {
   }
   if (homeWidgetsService.enabled) {
     homeWidgetsService.initialize();
+  }
+  if (spotlightService.enabled) {
+    spotlightService.initialize();
   }
 
   islandService.start();
@@ -479,6 +485,7 @@ class TechPieApp extends StatefulWidget {
   final HomeWidgetsService? homeWidgetsService;
   final DeadlineReminderService? deadlineReminderService;
   final SpendingAlertService? spendingAlertService;
+  final SpotlightService? spotlightService;
   final IslandService? islandService;
 
   const TechPieApp({
@@ -505,6 +512,7 @@ class TechPieApp extends StatefulWidget {
     this.homeWidgetsService,
     this.deadlineReminderService,
     this.spendingAlertService,
+    this.spotlightService,
     this.islandService,
   });
 
@@ -615,6 +623,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.ecardWidgetService?.setOpenPayHandler(_openEcardPayCode);
     widget.deadlineWidgetService?.setOpenHandler(_openDeadlines);
     widget.homeWidgetsService?.setOpenScheduleHandler(_openSchedule);
+    widget.spotlightService?.setCommandHandler(_openSpotlightCommand);
     _studyPlanService = _createStudyPlanService();
     widget.deadlineReminderService?.initialize();
   }
@@ -685,6 +694,10 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
       oldWidget.homeWidgetsService?.clearOpenScheduleHandler();
       widget.homeWidgetsService?.setOpenScheduleHandler(_openSchedule);
     }
+    if (oldWidget.spotlightService != widget.spotlightService) {
+      oldWidget.spotlightService?.setCommandHandler(null);
+      widget.spotlightService?.setCommandHandler(_openSpotlightCommand);
+    }
     if (oldWidget.deadlineReminderService != widget.deadlineReminderService) {
       oldWidget.deadlineReminderService?.dispose();
       widget.deadlineReminderService?.initialize();
@@ -700,6 +713,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     widget.ecardWidgetService?.clearOpenPayHandler();
     widget.deadlineWidgetService?.dispose();
     widget.homeWidgetsService?.dispose();
+    widget.spotlightService?.dispose();
     widget.deadlineReminderService?.dispose();
     widget.spendingAlertService?.dispose();
     _studyPlanService.dispose();
@@ -787,6 +801,11 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
     appShellPendingEcardEntry.value = CampusCardEntry.paymentCode;
   }
 
+  void _openSpotlightCommand(String commandId) {
+    _navigatorKey.currentState?.popUntil((route) => route is! PopupRoute);
+    appShellPendingCommandId.value = commandId;
+  }
+
   @override
   Widget build(BuildContext context) {
     // The plugin has no implementation on iOS, web or OHOS, where asking for
@@ -835,6 +854,7 @@ class _TechPieAppState extends State<TechPieApp> with WidgetsBindingObserver {
         homeWidgetsService: widget.homeWidgetsService,
         deadlineReminderService: widget.deadlineReminderService,
         spendingAlertService: widget.spendingAlertService,
+        spotlightService: widget.spotlightService,
         holidayTravelService: _holidayTravel,
         islandService: widget.islandService,
         child: MaterialApp(

@@ -7,6 +7,7 @@ import WidgetKit
 class AppDelegate: FlutterAppDelegate {
   let deadlineWidgetBridge = DeadlineWidgetBridge()
   let homeWidgetsBridge = HomeWidgetsBridge()
+  let spotlightBridge = SpotlightBridge()
   private var ecardDeepLinkChannel: FlutterMethodChannel?
   private var pendingEcardRoute: String?
 
@@ -70,6 +71,23 @@ class AppDelegate: FlutterAppDelegate {
       ecardDeepLinkChannel?.invokeMethod("openPayCode", arguments: nil)
     }
     return true
+  }
+
+  override func application(
+    _ application: NSApplication,
+    continue userActivity: NSUserActivity,
+    restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void
+  ) -> Bool {
+    if spotlightBridge.handleUserActivity(userActivity) {
+      application.activate(ignoringOtherApps: true)
+      mainFlutterWindow?.makeKeyAndOrderFront(nil)
+      return true
+    }
+    return super.application(
+      application,
+      continue: userActivity,
+      restorationHandler: restorationHandler
+    )
   }
 
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

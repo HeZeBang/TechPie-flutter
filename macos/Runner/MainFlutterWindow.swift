@@ -50,6 +50,7 @@ class MainFlutterWindow: NSWindow {
       appDelegate.deadlineWidgetBridge.configure(messenger: messenger)
       appDelegate.homeWidgetsBridge.configure(messenger: messenger)
       appDelegate.configureEcardDeepLink(messenger: messenger)
+      appDelegate.spotlightBridge.configure(messenger: messenger)
     }
     deadlineReminderBridge.configure(messenger: flutterViewController.engine.binaryMessenger)
 
