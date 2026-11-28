@@ -389,6 +389,31 @@ class ElearningService {
     )?.toLocal();
   }
 
+  Future<Map<String, String>?> _deadlineStatuses(String course) async {
+    try {
+      final page = html.parse(await client.getWebHtml(myGradesUrl(course).toString()));
+      final grades = page.querySelector('#streamDetailMainBodyRight');
+      if (grades == null) return null;
+      return {
+        // My Grades uses the numeric part of the REST gradebook column ID.
+        for (final row in grades.querySelectorAll('.sortable_item_row[id]'))
+          if (row.querySelector(r'.gradeStatus img[src$="needs_grading.png"]') != null)
+            '_${row.id}_1': 'Submitted'
+          else if (row.classes.contains('graded_item_row'))
+            '_${row.id}_1': 'Graded',
+      };
+    } on CampusRequestException catch (e) {
+      switch (e.kind) {
+        case CampusErrorKind.notLoggedIn:
+        case CampusErrorKind.idsNotBound:
+        case CampusErrorKind.sessionExpired:
+          rethrow;
+        default:
+          return null;
+      }
+    }
+  }
+
   Future<List<Assignment>> deadlines() async {
     unawaited(accountChanged());
     final version = _version, now = DateTime.now();
@@ -397,8 +422,11 @@ class ElearningService {
       now.subtract(const Duration(days: 14)),
       end: now.add(const Duration(days: 180)),
     );
-    final result = <String, Assignment>{};
+    final result =
+        <String, ({String title, String course, DateTime due, String status, String? url})>{};
     final calendarEntries = <(String, String, int)>{};
+    // A null value means the student's submission status could not be checked.
+    final submissionStatuses = <String, String?>{};
     for (final event in events) {
       final due = _deadlineTime(event['end'] ?? event['start']);
       if (due == null || due.isBefore(staleCutoff)) continue;
@@ -407,9 +435,7 @@ class ElearningService {
       final title = event['title'] as String? ?? '';
       final seconds = due.millisecondsSinceEpoch ~/ 1000;
       final id = source.isNotEmpty ? source : "${event['calendarId'] ?? ''}:$title:$seconds";
-      result[id] = Assignment(
-        id: id,
-        platform: 'blackboard',
+      result[id] = (
         title: title,
         course: course,
         due: due,
@@ -447,30 +473,45 @@ class ElearningService {
         if (e.kind == CampusErrorKind.forbidden || e.kind == CampusErrorKind.notFound) continue;
         rethrow;
       }
+      Future<Map<String, String>?>? courseStatuses;
       for (final col in columns) {
-        final due = _deadlineTime((col['grading'] as Map?)?['due']);
-        if (due == null || due.isBefore(staleCutoff)) continue;
-        final title = (col['name'] ?? col['displayName'] ?? '').toString();
-        if (calendarEntries.contains((course.name, title, due.millisecondsSinceEpoch ~/ 1000))) {
-          continue;
-        }
         final id = col['id'] as String;
-        final content = col['contentId'] as String?;
-        result.putIfAbsent(
-          id,
-          () => Assignment(
-            id: id,
-            platform: 'blackboard',
+        final due = _deadlineTime((col['grading'] as Map?)?['due']);
+        final title = (col['name'] ?? col['displayName'] ?? '').toString();
+        if (!result.containsKey(id)) {
+          if (due == null || due.isBefore(staleCutoff)) continue;
+          if (calendarEntries.contains((course.name, title, due.millisecondsSinceEpoch ~/ 1000))) {
+            continue;
+          }
+          final content = col['contentId'] as String?;
+          result[id] = (
             title: title,
             course: course.name,
             due: due,
             status: now.isBefore(due) ? 'Open' : 'Closed',
             url: content == null ? null : assignmentUrl(course.id, content).toString(),
-          ),
-        );
+          );
+        }
+        final statuses = await (courseStatuses ??= _deadlineStatuses(course.id));
+        if (statuses == null) {
+          submissionStatuses[id] = null;
+        } else if (statuses[id] case final status?) {
+          submissionStatuses[id] = status;
+        }
       }
     }
     _check(version);
-    return result.values.toList();
+    return [
+      for (final MapEntry(key: id, value: item) in result.entries)
+        Assignment(
+          id: id,
+          platform: 'blackboard',
+          title: item.title,
+          course: item.course,
+          due: item.due,
+          status: submissionStatuses.containsKey(id) ? submissionStatuses[id] : item.status,
+          url: item.url,
+        ),
+    ];
   }
 }

@@ -418,6 +418,41 @@ void main() {
     expect(fixture.storage.hasCachedAssignments, isFalse);
   });
 
+  test('Blackboard refresh preserves a confirmed submission while its status is unknown', () async {
+    final newDue = DateTime.utc(2027, 1, 10);
+    String? nextStatus;
+    final fixture = await _identityFixture(
+      (_, __) => http.Response('not found', 404),
+      account: FakeIdsClient.account('20240001'),
+      cached: [
+        {
+          ..._assignmentJson(id: 'assignment', platform: 'blackboard', due: DateTime.utc(2027)),
+          'status': 'Submitted',
+        },
+      ],
+      blackboardDeadlines: () async => [
+        Assignment(
+          id: 'assignment',
+          platform: 'blackboard',
+          title: 'Homework',
+          course: 'Course',
+          due: newDue,
+          status: nextStatus,
+        ),
+      ],
+    );
+
+    await fixture.service.fetchPlatform('blackboard');
+    expect(fixture.service.assignments.single.status, 'Submitted');
+    expect(fixture.service.assignments.single.due, newDue);
+    expect(fixture.storage.loadCachedAssignments().single['status'], 'Submitted');
+
+    nextStatus = 'Open';
+    await fixture.service.fetchPlatform('blackboard');
+    expect(fixture.service.assignments.single.status, 'Open');
+    expect(fixture.storage.loadCachedAssignments().single['status'], 'Open');
+  });
+
   test('failed platform fetch keeps that platform cache', () async {
     SharedPreferences.setMockInitialValues({});
     FlutterSecureStorage.setMockInitialValues({});
@@ -659,6 +694,7 @@ Future<
   FutureOr<http.Response> Function(Uri, Map<String, dynamic>) handler, {
   ThirdPartyAccount? account,
   List<Map<String, dynamic>>? cached,
+  Future<List<Assignment>> Function()? blackboardDeadlines,
 }) async {
   SharedPreferences.setMockInitialValues({});
   FlutterSecureStorage.setMockInitialValues({});
@@ -699,8 +735,14 @@ Future<
   await auth.loadSession();
   await thirdParty.initialize();
   final schedule = ScheduleService(storage, client, auth, thirdParty);
-  final service = AssignmentService(storage, client, auth, thirdParty, schedule)
-    ..loadCached();
+  final service = AssignmentService(
+    storage,
+    client,
+    auth,
+    thirdParty,
+    schedule,
+    blackboardDeadlines: blackboardDeadlines,
+  )..loadCached();
   addTearDown(() {
     service.dispose();
     schedule.dispose();
