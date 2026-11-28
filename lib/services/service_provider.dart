@@ -20,6 +20,7 @@ import 'oa_gym_service.dart';
 import 'pnp_minor_service.dart';
 import 'schedule_service.dart';
 import 'spending_alert_service.dart';
+import 'spotlight_service.dart';
 import 'storage_service.dart';
 import 'student_allowance_service.dart';
 import 'student_leave_service.dart';
@@ -62,6 +63,7 @@ class ServiceProvider extends InheritedWidget {
   final HomeWidgetsService? homeWidgetsService;
   final DeadlineReminderService? deadlineReminderService;
   final SpendingAlertService? spendingAlertService;
+  final SpotlightService? spotlightService;
   final HolidayTravelService? holidayTravelService;
   final IslandService? islandService;
 
@@ -96,6 +98,7 @@ class ServiceProvider extends InheritedWidget {
     this.homeWidgetsService,
     this.deadlineReminderService,
     this.spendingAlertService,
+    this.spotlightService,
     this.holidayTravelService,
     this.islandService,
     required super.child,
@@ -140,5 +143,6 @@ class ServiceProvider extends InheritedWidget {
       deadlineWidgetService != oldWidget.deadlineWidgetService ||
       homeWidgetsService != oldWidget.homeWidgetsService ||
       deadlineReminderService != oldWidget.deadlineReminderService ||
-      spendingAlertService != oldWidget.spendingAlertService;
+      spendingAlertService != oldWidget.spendingAlertService ||
+      spotlightService != oldWidget.spotlightService;
 }

@@ -34,6 +34,10 @@
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>club.geekpie.techpie.command</string>
+	</array>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>TechPie 使用提醒事项权限添加你选中的截止事项，并读取这些事项的完成状态。</string>
 	<key>NSRemindersUsageDescription</key>

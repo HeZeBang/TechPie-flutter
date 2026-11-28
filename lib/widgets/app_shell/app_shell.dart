@@ -70,6 +70,7 @@ final appShellPendingSchedule = ValueNotifier<bool>(false);
 final appShellPendingDeadlines = ValueNotifier<bool>(false);
 final appShellPendingTab = ValueNotifier<int?>(null);
 final appShellPendingHomeEdit = ValueNotifier<bool>(false);
+final appShellPendingCommandId = ValueNotifier<String?>(null);
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -161,6 +162,7 @@ class _AppShellState extends State<AppShell> {
     appShellPendingSchedule.addListener(_showSchedule);
     appShellPendingDeadlines.addListener(_showDeadlines);
     appShellPendingTab.addListener(_showPendingTab);
+    appShellPendingCommandId.addListener(_executePendingCommand);
     if (appShellPendingSchedule.value) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showSchedule());
     }
@@ -169,6 +171,11 @@ class _AppShellState extends State<AppShell> {
     }
     if (appShellPendingTab.value != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _showPendingTab());
+    }
+    if (appShellPendingCommandId.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _executePendingCommand(),
+      );
     }
     if (appShellPendingEcardEntry.value != null) {
       // Deferred: a push during the first build is a build-time side effect.
@@ -184,6 +191,7 @@ class _AppShellState extends State<AppShell> {
     appShellPendingSchedule.removeListener(_showSchedule);
     appShellPendingDeadlines.removeListener(_showDeadlines);
     appShellPendingTab.removeListener(_showPendingTab);
+    appShellPendingCommandId.removeListener(_executePendingCommand);
     for (final controller in _tabHeroControllers.values) {
       controller.dispose();
     }
@@ -266,6 +274,14 @@ class _AppShellState extends State<AppShell> {
       'campus_services',
     ];
     context.getInheritedWidgetOfExactType<ServiceProvider>()?.telemetry?.featureOpened(features[index]);
+    const tabCommandIds = [
+      'tab.home',
+      'tab.schedule',
+      'tab.deadlines',
+      'tab.settings',
+      'tab.campus_services',
+    ];
+    _donateSpotlightCommandById(tabCommandIds[index]);
     _previousSelectedIndex = _selectedIndex;
     setState(() => _selectedIndex = index);
   }
@@ -400,14 +416,15 @@ class _AppShellState extends State<AppShell> {
     appShellPendingHomeEdit.value = true;
   }
 
-  void _openCommandPalette({required bool allowSidebarToggle}) {
-    if (closeDesktopCommandPaletteIfOpen()) return;
+  List<DesktopCommandItem> _buildCommandPaletteItems({
+    required bool allowSidebarToggle,
+  }) {
     final services =
         context.getInheritedWidgetOfExactType<ServiceProvider>();
     final isMac = isMacOsDesktop();
     final mod = isMac ? '⌘' : 'Ctrl ';
 
-    final items = <DesktopCommandItem>[
+    return <DesktopCommandItem>[
       DesktopCommandItem(
         id: 'tab.home',
         title: '首页',
@@ -415,7 +432,7 @@ class _AppShellState extends State<AppShell> {
         group: '导航',
         icon: TpIcons.home,
         shortcutLabel: '${mod}1',
-        keywords: const ['home', 'shouye'],
+        keywords: const ['home', 'shou ye'],
         onExecute: () => _onDestinationSelected(0),
       ),
       DesktopCommandItem(
@@ -425,7 +442,8 @@ class _AppShellState extends State<AppShell> {
         group: '导航',
         icon: TpIcons.schedule,
         shortcutLabel: '${mod}2',
-        keywords: const ['schedule', 'kebiao', 'timetable'],
+        aliases: const ['cls'],
+        keywords: const ['schedule', 'ke biao', 'timetable'],
         onExecute: () => _onDestinationSelected(1),
       ),
       DesktopCommandItem(
@@ -435,7 +453,8 @@ class _AppShellState extends State<AppShell> {
         group: '导航',
         icon: TpIcons.deadlines,
         shortcutLabel: '${mod}3',
-        keywords: const ['deadline', 'ddl', 'assignments', 'zuoye'],
+        aliases: const ['ddl'],
+        keywords: const ['deadline', 'assignments', 'zuo ye'],
         onExecute: () => _onDestinationSelected(2),
       ),
       DesktopCommandItem(
@@ -445,7 +464,7 @@ class _AppShellState extends State<AppShell> {
         group: '导航',
         icon: TpIcons.activities,
         shortcutLabel: '${mod}4',
-        keywords: const ['services', 'campus', 'fuwu', 'more', '更多', '校园服务中心'],
+        keywords: const ['services', 'campus', 'fu wu', 'more', '更多', '校园服务中心'],
         onExecute: _openCampusServices,
       ),
       DesktopCommandItem(
@@ -455,7 +474,7 @@ class _AppShellState extends State<AppShell> {
         group: '导航',
         icon: TpIcons.profile,
         shortcutLabel: '${mod}5',
-        keywords: const ['settings', 'me', 'wode', 'shezhi'],
+        keywords: const ['settings', 'me', 'wo de', 'she zhi'],
         onExecute: () => _onDestinationSelected(AppShell.accountTabIndex),
       ),
       if (services != null)
@@ -466,6 +485,9 @@ class _AppShellState extends State<AppShell> {
             subtitle: feature.subtitle,
             group: '校园服务',
             icon: feature.icon.icon ?? TpIcons.activities,
+            aliases: feature.id == 'elrc_recordings'
+                ? const ['elrc']
+                : const <String>[],
             keywords: <String>[...feature.keywords, feature.category.label],
             onExecute: () =>
                 openCampusFeature(_activeNavigationContext(), feature),
@@ -478,7 +500,7 @@ class _AppShellState extends State<AppShell> {
           group: '快捷操作',
           icon: TpIcons.refresh,
           shortcutLabel: '${mod}R',
-          keywords: const ['refresh', 'sync', 'shuaxin'],
+          keywords: const ['refresh', 'sync', 'shua xin'],
           onExecute: _refreshWorkbenchData,
         ),
       if (allowSidebarToggle)
@@ -491,7 +513,7 @@ class _AppShellState extends State<AppShell> {
               ? TpIcons.sidebarExpand
               : TpIcons.sidebarCollapse,
           shortcutLabel: '$mod\\',
-          keywords: const ['sidebar', 'cebianlan', 'collapse'],
+          keywords: const ['sidebar', 'ce bian lan', 'collapse'],
           onExecute: _onSidebarToggleCollapsed,
         ),
       DesktopCommandItem(
@@ -500,7 +522,7 @@ class _AppShellState extends State<AppShell> {
         subtitle: '排序、增删或切换校园卡展示样式',
         group: '快捷操作',
         icon: TpIcons.dashboard,
-        keywords: const ['home', 'widget', 'layout', '定制', '主页', '组件', '排序'],
+        keywords: const ['home', 'widget', 'layout', 'ding zhi', 'zhu ye', '定制', '主页', '组件', '排序'],
         onExecute: _openHomeEditMode,
       ),
       if (services != null)
@@ -510,11 +532,80 @@ class _AppShellState extends State<AppShell> {
           subtitle: '在浅色与深色模式之间快速切换',
           group: '快捷操作',
           icon: TpIcons.palette,
-          keywords: const ['theme', 'dark', 'light', '外观'],
+          keywords: const ['theme', 'dark', 'light', 'wai guan', '外观'],
           onExecute: _toggleLightDarkTheme,
         ),
     ];
+  }
 
+  void _syncSpotlightCommands({required bool allowSidebarToggle}) {
+    final spotlight = context
+        .getInheritedWidgetOfExactType<ServiceProvider>()
+        ?.spotlightService;
+    if (spotlight == null || !spotlight.enabled) return;
+    unawaited(
+      spotlight.syncCommands(
+        _buildCommandPaletteItems(allowSidebarToggle: allowSidebarToggle),
+      ),
+    );
+  }
+
+  void _donateSpotlightCommand(DesktopCommandItem item) {
+    final spotlight = context
+        .getInheritedWidgetOfExactType<ServiceProvider>()
+        ?.spotlightService;
+    if (spotlight == null || !spotlight.enabled) return;
+    unawaited(spotlight.donateCommandUsage(item));
+  }
+
+  void _donateSpotlightCommandById(String commandId) {
+    final spotlight = context
+        .getInheritedWidgetOfExactType<ServiceProvider>()
+        ?.spotlightService;
+    if (spotlight == null || !spotlight.enabled) return;
+    for (final item in _buildCommandPaletteItems(allowSidebarToggle: true)) {
+      if (item.id == commandId) {
+        unawaited(spotlight.donateCommandUsage(item));
+        return;
+      }
+    }
+  }
+
+  void _executePendingCommand() {
+    final commandId = appShellPendingCommandId.value;
+    if (!mounted || commandId == null) return;
+    appShellPendingCommandId.value = null;
+    closeDesktopCommandPaletteIfOpen();
+    final items = _buildCommandPaletteItems(allowSidebarToggle: true);
+    for (final item in items) {
+      if (item.id == commandId) {
+        _donateSpotlightCommand(item);
+        item.onExecute();
+        return;
+      }
+    }
+  }
+
+  void _openCommandPalette({required bool allowSidebarToggle}) {
+    if (closeDesktopCommandPaletteIfOpen()) return;
+    final items = _buildCommandPaletteItems(
+      allowSidebarToggle: allowSidebarToggle,
+    ).map((item) {
+      return DesktopCommandItem(
+        id: item.id,
+        title: item.title,
+        subtitle: item.subtitle,
+        group: item.group,
+        icon: item.icon,
+        shortcutLabel: item.shortcutLabel,
+        aliases: item.aliases,
+        keywords: item.keywords,
+        onExecute: () {
+          _donateSpotlightCommand(item);
+          item.onExecute();
+        },
+      );
+    }).toList(growable: false);
     unawaited(showDesktopCommandPalette(context: context, items: items));
   }
 
@@ -633,6 +724,9 @@ class _AppShellState extends State<AppShell> {
 
     final services =
         context.dependOnInheritedWidgetOfExactType<ServiceProvider>();
+    if (services?.spotlightService?.enabled == true) {
+      _syncSpotlightCommands(allowSidebarToggle: desktopShell && showSidebarToggle);
+    }
 
     Widget shellWidget;
     if (desktopShell) {

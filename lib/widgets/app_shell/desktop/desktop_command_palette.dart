@@ -31,6 +31,7 @@ class DesktopCommandItem {
     required this.onExecute,
     this.subtitle = '',
     this.shortcutLabel,
+    this.aliases = const <String>[],
     this.keywords = const <String>[],
   });
 
@@ -40,16 +41,33 @@ class DesktopCommandItem {
   final String group;
   final IconData icon;
   final String? shortcutLabel;
+  final List<String> aliases;
   final List<String> keywords;
   final VoidCallback onExecute;
 
+  static final RegExp _imeSeparators = RegExp(r"[\s'\u2019\u3000]+");
+
+  static bool _fieldMatches(String field, String normalizedQuery, String compactQuery) {
+    final lower = field.toLowerCase();
+    if (lower.contains(normalizedQuery)) return true;
+    if (compactQuery.isNotEmpty &&
+        lower.replaceAll(_imeSeparators, '').contains(compactQuery)) {
+      return true;
+    }
+    return false;
+  }
+
   bool matches(String normalizedQuery) {
     if (normalizedQuery.isEmpty) return true;
-    if (title.toLowerCase().contains(normalizedQuery)) return true;
-    if (subtitle.toLowerCase().contains(normalizedQuery)) return true;
-    if (group.toLowerCase().contains(normalizedQuery)) return true;
+    final compactQuery = normalizedQuery.replaceAll(_imeSeparators, '');
+    if (_fieldMatches(title, normalizedQuery, compactQuery)) return true;
+    if (_fieldMatches(subtitle, normalizedQuery, compactQuery)) return true;
+    if (_fieldMatches(group, normalizedQuery, compactQuery)) return true;
+    for (final alias in aliases) {
+      if (_fieldMatches(alias, normalizedQuery, compactQuery)) return true;
+    }
     for (final kw in keywords) {
-      if (kw.toLowerCase().contains(normalizedQuery)) return true;
+      if (_fieldMatches(kw, normalizedQuery, compactQuery)) return true;
     }
     return false;
   }
