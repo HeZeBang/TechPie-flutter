@@ -353,7 +353,9 @@ void main() {
           ],
         });
       }
-      if (path.endsWith('/terms')) return respond({'results': []});
+      if (path.endsWith('/terms')) {
+        return respond({'results': <Map<String, dynamic>>[]});
+      }
       if (path.endsWith('/courses/a') || path.endsWith('/courses/b')) {
         final id = r.uri.pathSegments.last;
         return respond({
